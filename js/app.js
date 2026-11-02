@@ -33,7 +33,7 @@ const COULEURS = {
 };
 
 let recapAOuvrir = null;
-const couleur = () => (COULEURS[S.get().reglages.couleur] ? S.get().reglages.couleur : 'C1');
+const couleur = () => 'C1';
 const appliquerCouleur = () => { document.documentElement.dataset.couleur = couleur(); };
 
 // --- Zone visible : les fenêtres suivent le clavier et les barres du navigateur ----
@@ -96,8 +96,9 @@ function vueAccueil() {
     </header>
 
     ${enCours ? `
-      <button class="encours" data-action="reprendre" style="--c:${enCours.couleur}">
-        <span class="encours-texte"><small>${enCours.debut ? 'Séance en cours' : 'Séance ouverte, pas commencée'}</small><strong>${esc(enCours.nom)}</strong></span>
+      <h3 class="titre-section">Séance en cours</h3>
+      <button class="split encours" data-action="reprendre" style="--c:${enCours.couleur}">
+        <span class="split-texte"><strong>${esc(enCours.nom)}</strong><small>${enCours.debut ? `${bilan(enCours).faites}/${bilan(enCours).series} séries · ${kg(Math.round(bilan(enCours).tonnage))} kg` : 'Ouverte, pas commencée'}</small></span>
         <span class="encours-temps" data-temps-seance>${enCours.debut ? duree((Date.now() - new Date(enCours.debut)) / 1000) : 'Reprendre'}</span>
       </button>` : ''}
 
@@ -130,13 +131,6 @@ function vueAccueil() {
     </ul>` : '<p class="vide">Tes séances terminées apparaîtront ici.</p>'}
 
     <div class="pied">
-      <p class="titre-couleurs">Couleur à l'essai</p>
-      <div class="couleurs">
-        ${Object.entries(COULEURS).map(([k, c]) => `
-          <button class="couleur ${couleur() === k ? 'choisie' : ''}" data-action="couleur" data-couleur="${k}" style="--a:${c.a};--b:${c.b}">
-            <span class="echantillon"></span><span><strong>${k}</strong><small>${c.nom}</small></span>
-          </button>`).join('')}
-      </div>
       <button class="lien discret" data-action="reinitialiser">Réinitialiser la démo</button>
     </div>`;
 

@@ -71,12 +71,8 @@ b { font-weight: 600; }
 .aide.centre { text-align: center; margin: 0 0 12px; }
 
 /* Accueil */
-.encours { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 11px 14px 11px 16px; margin-bottom: 4px; border-radius: var(--rayon); background: linear-gradient(120deg, var(--pale), #fff 75%); box-shadow: var(--ombre); border: 1px solid color-mix(in srgb, var(--a) 40%, white); position: relative; overflow: hidden; }
-.encours::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--c); }
-.encours small { display: block; }
-.encours strong { font-size: 16px; }
-.encours-texte { flex: 1; }
-.encours-temps { font-variant-numeric: tabular-nums; font-size: 18px; font-weight: 600; color: var(--accent); }
+.split.encours { width: 100%; text-align: left; padding: 10px 14px 10px 18px; min-height: 52px; }
+.encours-temps { font-variant-numeric: tabular-nums; font-size: 17px; font-weight: 600; color: var(--accent); }
 
 
 .titre-section { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--texte-3); font-weight: 600; margin: 20px 4px 8px; }
