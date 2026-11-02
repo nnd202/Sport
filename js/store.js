@@ -6,7 +6,7 @@ const CLE = 'sport-etat';
 let etat = charger();
 
 function vierge() {
-  return { version: 1, programmes: [programmeDemo()], seances: [], encours: null, reglages: { antiVeille: false } };
+  return { version: 1, programmes: [programmeDemo()], seances: [], encours: null, reglages: { antiVeille: false, couleur: 'C1' } };
 }
 
 function charger() {
@@ -38,18 +38,35 @@ export function derniereDuSplit(programmeId, splitId) {
   return l[l.length - 1] || null;
 }
 
-export function demarrer(programmeId, splitId) {
+// Ouvre une séance sans lancer le temps : on peut l'ajuster avant de commencer.
+export function ouvrir(programmeId, splitId) {
   const p = programme(programmeId);
   const split = p.splits.find((s) => s.id === splitId);
   const s = nouvelleSeance(p, split, derniereDuSplit(programmeId, splitId));
-  if (!p.debut) p.debut = aujourdhui();
+  s.debut = null;
   etat.seances.push(s);
   etat.encours = s.id;
   enregistrer();
   return s;
 }
 
+export function lancer(s) {
+  if (s.debut) return;
+  s.debut = new Date().toISOString();
+  s.date = aujourdhui();
+  const p = programme(s.programmeId);
+  if (p && !p.debut) p.debut = s.date;
+  enregistrer();
+}
+
+export function ordonnerSplits(programmeId, ids) {
+  const p = programme(programmeId);
+  p.splits.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+  enregistrer();
+}
+
 export function terminer(s, { ressenti, note }) {
+  if (!s.debut) lancer(s);
   s.fin = new Date().toISOString();
   s.ressenti = ressenti;
   s.note = note || '';

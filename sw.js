@@ -1,6 +1,6 @@
 // Réseau d'abord, cache en secours. Tout nouveau fichier doit être ajouté à CORE
 // (node tools/check.mjs le contrôle).
-const CACHE = 'sport-v2';
+const CACHE = 'sport-v3';
 const CORE = [
   './',
   'index.html',

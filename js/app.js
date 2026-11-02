@@ -1,4 +1,4 @@
-// Interface de Sport : accueil, séance, chrono, fenêtres de saisie.
+// Interface de Sport : accueil, séance, récap, chrono, fenêtres de saisie.
 import * as S from './store.js';
 import { uid, duree, dureeSeance, dateCourte, kg, texteSerie, bilan, MESURES } from './calc.js';
 
@@ -12,33 +12,47 @@ const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const I = {
   retour: '<svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>',
   plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+  moins: '<svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg>',
   check: '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  croix: '<svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></svg>',
   play: '<svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z" class="plein"/></svg>',
   stop: '<svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2" class="plein"/></svg>',
   haut: '<svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg>',
   bas: '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>',
-  plusPetit: '<svg viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg>',
-  moins: '<svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg>',
   menu: '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6" class="plein"/><circle cx="12" cy="12" r="1.6" class="plein"/><circle cx="19" cy="12" r="1.6" class="plein"/></svg>',
   ecran: '<svg viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2.5"/><path d="M11 18h2"/></svg>',
   partage: '<svg viewBox="0 0 24 24"><path d="M12 15V4M8 8l4-4 4 4"/><path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>',
   chrono: '<svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="7.5"/><path d="M12 13V9.5M10 3h4"/></svg>',
+  poignee: '<svg viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.5" class="plein"/><circle cx="15" cy="6" r="1.5" class="plein"/><circle cx="9" cy="12" r="1.5" class="plein"/><circle cx="15" cy="12" r="1.5" class="plein"/><circle cx="9" cy="18" r="1.5" class="plein"/><circle cx="15" cy="18" r="1.5" class="plein"/></svg>',
+};
+
+// Palettes à l'essai : toujours en nuances (dégradé), jamais en aplat.
+const COULEURS = {
+  C1: { nom: 'Lagon', a: '#62d2c4', b: '#2b97b3' },
+  C2: { nom: 'Menthe', a: '#8edbb0', b: '#36a383' },
+  C3: { nom: 'Océan', a: '#7fb6f2', b: '#3a72d0' },
+  C4: { nom: 'Sauge', a: '#b2d3b0', b: '#5f977a' },
+  C5: { nom: 'Glacier', a: '#a6dcea', b: '#4a95bd' },
+  C6: { nom: 'Pétrole', a: '#5cbcb0', b: '#226b7a' },
 };
 
 let reorganiser = false;
-const teinte = () => S.get().reglages.teinte || 'peche';
-const appliquerTeinte = () => { document.documentElement.dataset.teinte = teinte(); };
-let resumeAOuvrir = null;
+let recapAOuvrir = null;
+const couleur = () => (COULEURS[S.get().reglages.couleur] ? S.get().reglages.couleur : 'C1');
+const appliquerCouleur = () => { document.documentElement.dataset.couleur = couleur(); };
 
-// --- Zone visible : suit les barres du navigateur et le clavier ---------------------
+// --- Zone visible : les fenêtres suivent le clavier et les barres du navigateur ----
 
 function suivreZoneVisible() {
   const vv = window.visualViewport;
   const maj = () => {
     const h = vv ? vv.height : window.innerHeight;
     const top = vv ? vv.offsetTop : 0;
-    document.documentElement.style.setProperty('--vv-h', `${h}px`);
-    document.documentElement.style.setProperty('--vv-top', `${top}px`);
+    const r = document.documentElement.style;
+    r.setProperty('--vv-h', `${h}px`);
+    r.setProperty('--vv-top', `${top}px`);
+    // Clavier ouvert : la zone visible est nettement plus petite que la fenêtre.
+    document.body.classList.toggle('clavier', !!vv && window.innerHeight - h > 150);
   };
   maj();
   vv?.addEventListener('resize', maj);
@@ -52,6 +66,8 @@ function route() {
   fermer();
   const h = location.hash || '#/';
   if (h.startsWith('#/seance') && S.seanceEnCours()) return vueSeance();
+  const m = h.match(/^#\/recap\/(.+)$/);
+  if (m && S.seance(m[1])) return vueRecap(S.seance(m[1]));
   return vueAccueil();
 }
 
@@ -61,88 +77,133 @@ function aller(h) {
 
 // --- Accueil ------------------------------------------------------------------------
 
+function joursDepuis(iso) {
+  return Math.round((new Date().setHours(12, 0, 0, 0) - new Date(`${iso}T12:00:00`)) / 864e5);
+}
+
 function vueAccueil() {
   reorganiser = false;
   gererVeille();
+  flottant.innerHTML = '';
   const p = S.programmeEnCours();
   const faites = S.seancesDe(p.id);
   const enCours = S.seanceEnCours();
-  const derniere = faites[faites.length - 1];
-  const idxSuivant = derniere ? (p.splits.findIndex((s) => s.id === derniere.splitId) + 1) % p.splits.length : 0;
 
   app.innerHTML = `
     <header class="entete">
       <h1>Sport</h1>
-      <button class="btn-rond" data-action="sauvegarder" aria-label="Sauvegarder">${I.partage}</button>
+      <button class="btn-icone" data-action="sauvegarder" aria-label="Sauvegarder">${I.partage}</button>
     </header>
 
     ${enCours ? `
-      <button class="carte encours" data-action="reprendre">
-        <span class="pastille" style="--c:${enCours.couleur}"></span>
-        <span class="encours-texte"><small>Séance en cours</small><strong>${esc(enCours.nom)}</strong></span>
-        <span class="encours-temps" data-temps-seance>${duree((Date.now() - new Date(enCours.debut)) / 1000)}</span>
+      <button class="encours" data-action="reprendre">
+        <span class="encours-texte"><small>${enCours.debut ? 'Séance en cours' : 'Séance ouverte, pas commencée'}</small><strong>${esc(enCours.nom)}</strong></span>
+        <span class="encours-temps" data-temps-seance>${enCours.debut ? duree((Date.now() - new Date(enCours.debut)) / 1000) : 'Ouvrir'}</span>
       </button>` : ''}
 
-    <section class="carte programme">
-      <div class="programme-tete">
-        <div><small>Programme en cours</small><h2>${esc(p.nom)}</h2></div>
-        <div class="jauge-mini"><strong>${faites.length}</strong><small>séance${faites.length > 1 ? 's' : ''}</small></div>
-      </div>
-      <p class="aide">${p.debut ? `Commencé le ${dateCourte(p.debut)}` : 'Pas encore commencé'}</p>
+    <section class="programme">
+      <div><small>Programme en cours</small><h2>${esc(p.nom)}</h2></div>
+      <div class="programme-chiffres"><strong>${faites.length}</strong><small>séance${faites.length > 1 ? 's' : ''}${p.debut ? ` depuis le ${dateCourte(p.debut)}` : ''}</small></div>
     </section>
 
     <h3 class="titre-section">Splits</h3>
-    <ul class="liste-splits">
-      ${p.splits.map((sp, i) => {
+    <ul class="pool" data-pool>
+      ${p.splits.map((sp) => {
         const der = S.derniereDuSplit(p.id, sp.id);
-        const jours = der ? Math.round((new Date().setHours(12) - new Date(`${der.date}T12:00:00`)) / 864e5) : null;
+        const j = der ? joursDepuis(der.date) : null;
         return `
-        <li class="carte split ${i === idxSuivant ? 'suivant' : ''}">
-          <span class="pastille" style="--c:${sp.couleur}"></span>
+        <li class="split" data-split-id="${sp.id}" style="--c:${sp.couleur}">
+          <span class="poignee" data-glisser aria-label="Déplacer">${I.poignee}</span>
           <span class="split-texte">
             <strong>${esc(sp.nom)}</strong>
-            <small>${der ? `${dateCourte(der.date)} · ${jours === 0 ? "aujourd'hui" : `il y a ${jours} j`}` : 'Jamais fait'}</small>
+            <small>${der ? `${dateCourte(der.date)} · ${j === 0 ? "aujourd'hui" : `il y a ${j} j`}` : 'Pas encore fait'}</small>
           </span>
-          ${i === idxSuivant ? '<span class="badge">Suivant</span>' : ''}
-          <button class="btn ${i === idxSuivant ? 'btn-principal' : ''} btn-petit" data-action="demarrer" data-split="${sp.id}">Démarrer</button>
+          <button class="btn btn-petit" data-action="ouvrir" data-split="${sp.id}">Ouvrir</button>
         </li>`;
       }).join('')}
     </ul>
 
-    <h3 class="titre-section">Historique</h3>
+    <h3 class="titre-section">Séances terminées</h3>
     ${faites.length ? `<ul class="historique">
       ${faites.slice().reverse().map((s) => {
         const b = bilan(s);
-        return `<li><button class="ligne-histo" data-action="voir" data-id="${s.id}">
-          <span class="pastille" style="--c:${s.couleur}"></span>
-          <span class="histo-texte"><strong>${esc(s.nom)}</strong><small>${dateCourte(s.date)} · ${dureeSeance(b.dureeSec)}</small></span>
-          <span class="histo-chiffres"><strong>${kg(Math.round(b.tonnage))} kg</strong>${s.ressenti ? `<small>ressenti ${s.ressenti}/10</small>` : ''}</span>
+        return `<li><button class="ligne-histo" data-action="recap" data-id="${s.id}" style="--c:${s.couleur}">
+          <span class="histo-texte"><strong>${esc(s.nom)}</strong><small>${dateCourte(s.date)} · ${dureeSeance(b.dureeSec)}${s.ressenti ? ` · ressenti ${s.ressenti}/10` : ''}</small></span>
+          <span class="histo-tonnage">${kg(Math.round(b.tonnage))} kg</span>
         </button></li>`;
       }).join('')}
     </ul>` : '<p class="vide">Tes séances terminées apparaîtront ici.</p>'}
 
     <div class="pied">
-      <div class="teintes">Teinte
-        ${[['peche', 'Pêche', '#f79a78'], ['orange', 'Orange', '#ff6a3d']].map(([k, l, c]) => `<button class="puce ${teinte() === k ? 'choisi' : ''}" data-action="teinte" data-teinte="${k}"><span class="apercu" style="background:${c}"></span>${l}</button>`).join('')}
+      <p class="titre-couleurs">Couleur à l'essai</p>
+      <div class="couleurs">
+        ${Object.entries(COULEURS).map(([k, c]) => `
+          <button class="couleur ${couleur() === k ? 'choisie' : ''}" data-action="couleur" data-couleur="${k}" style="--a:${c.a};--b:${c.b}">
+            <span class="echantillon"></span><span><strong>${k}</strong><small>${c.nom}</small></span>
+          </button>`).join('')}
       </div>
-      <button class="lien" data-action="reinitialiser">Réinitialiser la démo</button>
+      <button class="lien discret" data-action="reinitialiser">Réinitialiser la démo</button>
     </div>`;
-  flottant.innerHTML = '';
-  if (resumeAOuvrir) {
-    const r = S.seance(resumeAOuvrir);
-    resumeAOuvrir = null;
-    if (r) fenetreResume(r, true);
+
+  if (recapAOuvrir) {
+    const id = recapAOuvrir;
+    recapAOuvrir = null;
+    setTimeout(() => aller(`#/recap/${id}`), 0);
   }
+}
+
+// Glisser-déposer des splits : on attrape la poignée, on lâche à la nouvelle place.
+function activerGlisser(ev) {
+  const poignee = ev.target.closest('[data-glisser]');
+  if (!poignee) return;
+  const li = poignee.closest('li');
+  const liste = li.parentElement;
+  ev.preventDefault();
+  poignee.setPointerCapture(ev.pointerId);
+  li.classList.add('glisse');
+  let ty = 0;
+  // Centre de la carte sans le décalage visuel en cours.
+  const centre = () => { const r = li.getBoundingClientRect(); return r.top - ty + r.height / 2; };
+  const ecart = ev.clientY - centre();
+
+  const suivre = (e) => {
+    const doigt = e.clientY - ecart;
+    const voisins = [...liste.children];
+    const i = voisins.indexOf(li);
+    const prec = voisins[i - 1], suiv = voisins[i + 1];
+    if (prec && doigt < prec.getBoundingClientRect().top + prec.offsetHeight / 2) liste.insertBefore(li, prec);
+    else if (suiv && doigt > suiv.getBoundingClientRect().top + suiv.offsetHeight / 2) liste.insertBefore(li, suiv.nextSibling);
+    ty = 0;
+    li.style.transform = '';
+    ty = doigt - centre();
+    li.style.transform = `translateY(${ty}px)`;
+  };
+  const lacher = () => {
+    li.classList.remove('glisse');
+    li.style.transform = '';
+    poignee.removeEventListener('pointermove', suivre);
+    poignee.removeEventListener('pointerup', lacher);
+    poignee.removeEventListener('pointercancel', lacher);
+    S.ordonnerSplits(S.programmeEnCours().id, [...liste.children].map((x) => x.dataset.splitId));
+  };
+  poignee.addEventListener('pointermove', suivre);
+  poignee.addEventListener('pointerup', lacher);
+  poignee.addEventListener('pointercancel', lacher);
 }
 
 // --- Séance -------------------------------------------------------------------------
 
-const typeBloc = (n) => (n === 2 ? 'Biset' : n === 3 ? 'Triset' : n >= 4 ? 'Circuit' : '');
 const lettre = (i) => String.fromCharCode(65 + i);
-
-function nbTours(b) { return Math.max(...b.exos.map((e) => e.series.length)); }
 const actifs = (b) => b.exos.filter((e) => !e.remplacePar);
+function nbTours(b) { return Math.max(0, ...actifs(b).map((e) => e.series.length)); }
 function blocFini(b) { return actifs(b).every((e) => e.series.length && e.series.every((x) => x.fait)); }
+
+function valeurs(e, s) {
+  const u = e.uni ? '<i>/côté</i>' : '';
+  if (e.mesure === 'temps') return `<span class="v"><b>${s.sec ?? 0}</b> s${u}</span>`;
+  if (e.mesure === 'pdc') return `<span class="v"><b>${s.reps ?? 0}</b> reps${u}</span>`;
+  return `<span class="v v-kg"><b>${kg(s.kg ?? 0)}</b> kg</span><span class="v"><b>${s.reps ?? 0}</b> reps${u}</span>`;
+}
 
 function ligneSerie(b, e, si, prefixe) {
   const s = e.series[si];
@@ -152,7 +213,7 @@ function ligneSerie(b, e, si, prefixe) {
     <div class="serie ${s.fait ? 'faite' : ''}">
       <span class="serie-num">${prefixe}</span>
       <button class="serie-valeur" data-action="editer-serie" data-bloc="${b.id}" data-exo="${e.id}" data-i="${si}">
-        ${texteSerie(e, s)}${e.uni ? '<em>/côté</em>' : ''}${change ? '<i class="modifie" title="Différent du prévu"></i>' : ''}
+        ${valeurs(e, s)}${change ? '<span class="modifie" title="Différent du prévu"></span>' : ''}
       </button>
       <button class="coche" data-action="cocher" data-bloc="${b.id}" data-exo="${e.id}" data-i="${si}" aria-label="Valider la série">${I.check}</button>
     </div>`;
@@ -169,55 +230,49 @@ function etiquettes(e, s) {
   return t.map((x) => `<span class="etiquette">${esc(x)}</span>`).join('');
 }
 
+function boutonsDeplacer(s, b, idx) {
+  return `<span class="deplacer">
+    <button class="btn-icone petit" data-action="monter" data-bloc="${b.id}" aria-label="Monter" ${idx === 0 ? 'disabled' : ''}>${I.haut}</button>
+    <button class="btn-icone petit" data-action="descendre" data-bloc="${b.id}" aria-label="Descendre" ${idx === s.blocs.length - 1 ? 'disabled' : ''}>${I.bas}</button>
+  </span>`;
+}
+
 function carteBloc(s, b, idx) {
+  const tous = s.blocs.flatMap((x) => x.exos);
   if (!actifs(b).length) {
-    const tous = s.blocs.flatMap((x) => x.exos);
     return `
-    <article class="carte bloc remplace" data-bloc-id="${b.id}">
-      ${b.exos.map((e) => `<p><s>${esc(e.nom)}</s> <span class="etiquette">remplacé par ${esc(tous.find((x) => x.id === e.remplacePar)?.nom || '')}</span></p>`).join('')}
-      ${reorganiser ? `<span class="bloc-deplacer">
-          <button class="btn-rond petit" data-action="monter" data-bloc="${b.id}" aria-label="Monter" ${idx === 0 ? 'disabled' : ''}>${I.haut}</button>
-          <button class="btn-rond petit" data-action="descendre" data-bloc="${b.id}" aria-label="Descendre" ${idx === s.blocs.length - 1 ? 'disabled' : ''}>${I.bas}</button></span>` : ''}
+    <article class="bloc remplace">
+      <p>${b.exos.map((e) => `<s>${esc(e.nom)}</s> → ${esc(tous.find((x) => x.id === e.remplacePar)?.nom || '')}`).join('<br>')}</p>
+      ${reorganiser ? boutonsDeplacer(s, b, idx) : ''}
     </article>`;
   }
-  const multi = b.exos.length > 1;
-  const fini = blocFini(b);
-  const tete = `
-    <div class="bloc-tete">
-      ${multi ? `<span class="bloc-type">${typeBloc(b.exos.length)}</span>` : `<button class="exo-nom" data-action="editer-exo" data-bloc="${b.id}" data-exo="${b.exos[0].id}">${esc(b.exos[0].nom)}</button>`}
-      <span class="bloc-repos">${I.chrono} ${duree(b.repos)}</span>
-      ${reorganiser ? `
-        <span class="bloc-deplacer">
-          <button class="btn-rond petit" data-action="monter" data-bloc="${b.id}" aria-label="Monter" ${idx === 0 ? 'disabled' : ''}>${I.haut}</button>
-          <button class="btn-rond petit" data-action="descendre" data-bloc="${b.id}" aria-label="Descendre" ${idx === s.blocs.length - 1 ? 'disabled' : ''}>${I.bas}</button>
-        </span>` : ''}
-    </div>`;
+  const exos = actifs(b);
+  const multi = exos.length > 1;
+  const titres = exos.map((e, i) => `
+    <div class="exo-titre">
+      ${multi ? `<span class="lettre">${lettre(i)}</span>` : ''}
+      <button class="exo-nom" data-action="editer-exo" data-bloc="${b.id}" data-exo="${e.id}">${esc(e.nom)}</button>
+      ${etiquettes(e, s)}
+    </div>
+    ${e.note ? `<p class="exo-note">${esc(e.note)}</p>` : ''}`).join('');
 
-  let corps;
-  if (!multi) {
-    const e = b.exos[0];
-    corps = `
-      ${etiquettes(e, s) ? `<div class="etiquettes">${etiquettes(e, s)}</div>` : ''}
-      ${e.note ? `<p class="exo-note">${esc(e.note)}</p>` : ''}
-      ${reorganiser ? '' : `<div class="series">${e.series.map((_, i) => ligneSerie(b, e, i, i + 1)).join('')}</div>`}`;
-  } else {
-    corps = `
-      <ul class="exos-multi">
-        ${b.exos.map((e, i) => `<li><span class="lettre">${lettre(i)}</span>
-          <button class="exo-nom" data-action="editer-exo" data-bloc="${b.id}" data-exo="${e.id}">${esc(e.nom)}</button>
-          ${etiquettes(e, s)}</li>
-          ${e.note ? `<li class="exo-note">${esc(e.note)}</li>` : ''}`).join('')}
-      </ul>
-      ${reorganiser ? '' : `<div class="series">
-        ${Array.from({ length: nbTours(b) }, (_, t) => `
-          <div class="tour">${b.exos.map((e, i) => ligneSerie(b, e, t, `${t + 1}${lettre(i)}`)).join('')}</div>`).join('')}
-      </div>`}`;
-  }
+  const series = reorganiser ? '' : multi
+    ? Array.from({ length: nbTours(b) }, (_, t) => `<div class="tour">${exos.map((e, i) => ligneSerie(b, e, t, `${t + 1}${lettre(i)}`)).join('')}</div>`).join('')
+    : exos[0].series.map((_, i) => ligneSerie(b, exos[0], i, i + 1)).join('');
 
   return `
-    <article class="carte bloc ${fini ? 'fini' : ''}" data-bloc-id="${b.id}">
-      ${tete}${corps}
-      ${reorganiser ? '' : `<div class="bloc-pied"><button class="lien" data-action="ajouter-serie" data-bloc="${b.id}">${I.plusPetit} série</button></div>`}
+    <article class="bloc ${blocFini(b) ? 'fini' : ''}">
+      <div class="bloc-tete">
+        <div class="bloc-titres">${titres}</div>
+        <span class="bloc-repos">${I.chrono}${duree(b.repos)}</span>
+        ${reorganiser ? boutonsDeplacer(s, b, idx) : ''}
+      </div>
+      ${reorganiser ? '' : `
+        <div class="series">${series}</div>
+        <div class="bloc-pied">
+          <button class="lien" data-action="retirer-serie" data-bloc="${b.id}">${I.moins} série</button>
+          <button class="lien" data-action="ajouter-serie" data-bloc="${b.id}">${I.plus} série</button>
+        </div>`}
     </article>`;
 }
 
@@ -226,28 +281,31 @@ function vueSeance() {
   if (!s) return aller('#/');
   gererVeille();
   const b = bilan(s);
-  const reglages = S.get().reglages;
+  const r = S.get().reglages;
   app.innerHTML = `
-    <header class="entete seance-tete">
-      <button class="btn-rond" data-action="accueil" aria-label="Accueil">${I.retour}</button>
+    <header class="entete seance-tete" style="--c:${s.couleur}">
+      <button class="btn-icone" data-action="accueil" aria-label="Accueil">${I.retour}</button>
       <div class="seance-titre">
-        <small>${dateCourte(s.date)} · <span data-temps-seance>${duree(b.dureeSec)}</span></small>
-        <h1><span class="pastille" style="--c:${s.couleur}"></span>${esc(s.nom)}</h1>
+        <h1>${esc(s.nom)}</h1>
+        <small>${s.debut ? `${dateCourte(s.date)} · <span data-temps-seance>${duree(b.dureeSec)}</span>` : 'Pas commencée'}</small>
       </div>
-      <button class="btn-rond ${reglages.antiVeille ? 'actif' : ''}" data-action="veille" aria-label="Garder l'écran allumé" aria-pressed="${reglages.antiVeille}">${I.ecran}</button>
-      <button class="btn-rond" data-action="menu-seance" aria-label="Plus d'actions">${I.menu}</button>
+      <button class="btn-icone ${r.antiVeille ? 'actif' : ''}" data-action="veille" aria-label="Garder l'écran allumé" aria-pressed="${r.antiVeille}">${I.ecran}</button>
+      <button class="btn-icone" data-action="menu-seance" aria-label="Plus d'actions">${I.menu}</button>
     </header>
 
-    <div class="progression"><span style="width:${b.series ? (b.faites / b.series) * 100 : 0}%"></span></div>
-    <p class="resume-seance"><strong>${b.faites}</strong>/${b.series} séries · <strong>${kg(Math.round(b.tonnage))}</strong> kg</p>
+    ${s.debut ? `
+      <div class="progression"><span style="width:${b.series ? (b.faites / b.series) * 100 : 0}%"></span></div>
+      <p class="resume-seance"><span><b>${b.faites}</b>/${b.series} séries</span><span><b>${kg(Math.round(b.tonnage))}</b> kg</span></p>`
+    : `<button class="btn btn-principal btn-large" data-action="lancer">${I.play} Démarrer la séance</button>
+       <p class="aide centre">Ajuste ce que tu veux avant : le temps ne part qu'au démarrage.</p>`}
 
-    ${reorganiser ? `<div class="bandeau">Touche les flèches pour changer l'ordre.<button class="btn btn-petit btn-principal" data-action="fin-reorganiser">Terminé</button></div>` : ''}
+    ${reorganiser ? `<div class="bandeau">Change l'ordre avec les flèches.<button class="btn btn-petit btn-principal" data-action="fin-reorganiser">Terminé</button></div>` : ''}
 
     <div class="blocs">${s.blocs.map((bl, i) => carteBloc(s, bl, i)).join('')}</div>
 
     ${reorganiser ? '' : `
-      <button class="carte ajout" data-action="ajouter-exo">${I.plus} Ajouter un exercice</button>
-      <button class="btn btn-principal btn-large" data-action="terminer">Terminer la séance</button>`}
+      <button class="ajout" data-action="ajouter-exo">${I.plus} Ajouter un exercice</button>
+      ${s.debut ? '<button class="btn btn-principal btn-large" data-action="terminer">Terminer la séance</button>' : ''}`}
     <div class="espace-chrono"></div>`;
   dessinerChrono();
 }
@@ -257,25 +315,57 @@ function trouver(s, blocId, exoId) {
   return { b, e: b?.exos.find((x) => x.id === exoId) };
 }
 
+// --- Récap d'une séance terminée ---------------------------------------------------
+
+function vueRecap(s) {
+  flottant.innerHTML = '';
+  const b = bilan(s);
+  const tous = s.blocs.flatMap((x) => x.exos);
+  app.innerHTML = `
+    <header class="entete seance-tete" style="--c:${s.couleur}">
+      <button class="btn-icone" data-action="accueil" aria-label="Accueil">${I.retour}</button>
+      <div class="seance-titre"><h1>${esc(s.nom)}</h1><small>${dateCourte(s.date)} · terminée</small></div>
+    </header>
+    <div class="tuiles">
+      <div class="tuile"><small>Durée</small><strong>${dureeSeance(b.dureeSec)}</strong></div>
+      <div class="tuile"><small>Tonnage</small><strong>${kg(Math.round(b.tonnage))} kg</strong></div>
+      <div class="tuile"><small>Séries</small><strong>${b.faites}/${b.series}</strong></div>
+      <div class="tuile"><small>Ressenti</small><strong>${s.ressenti ? `${s.ressenti}/10` : '–'}</strong></div>
+      <div class="tuile large"><small>Repos moyen</small><strong>${b.nbRepos ? `${duree(b.reposMoyen)} <em>prévu ${duree(b.reposPrevuMoyen)} · ${b.nbRepos} repos</em>` : '<em>Chrono non utilisé</em>'}</strong></div>
+    </div>
+    ${s.note ? `<p class="note-seance">${esc(s.note)}</p>` : ''}
+    <div class="recap">
+      ${s.blocs.map((bl) => bl.exos.map((e) => {
+        if (e.remplacePar) return `<div class="recap-exo remplace"><s>${esc(e.nom)}</s> → ${esc(tous.find((x) => x.id === e.remplacePar)?.nom || '')}</div>`;
+        const ton = e.mesure === 'charge' ? e.series.reduce((a, x) => a + (x.fait ? (x.kg || 0) * (x.reps || 0) * (e.uni ? 2 : 1) : 0), 0) : 0;
+        return `
+        <div class="recap-exo">
+          <div class="recap-tete"><strong>${esc(e.nom)}</strong>${etiquettes(e, s)}${ton ? `<span class="recap-ton">${kg(Math.round(ton))} kg</span>` : ''}</div>
+          ${e.note ? `<p class="exo-note">${esc(e.note)}</p>` : ''}
+          <div class="recap-series">${e.series.map((x, i) => `<span class="${x.fait ? '' : 'non-faite'}">${i + 1}. ${texteSerie(e, x)}</span>`).join('')}</div>
+        </div>`;
+      }).join('')).join('')}
+    </div>
+    <div class="pied"><button class="lien danger" data-action="supprimer-seance" data-id="${s.id}">Supprimer cette séance</button></div>`;
+  window.scrollTo(0, 0);
+}
+
 // --- Chrono -------------------------------------------------------------------------
 
 function blocCourant(s) {
   if (s.chrono?.blocId) return s.blocs.find((b) => b.id === s.chrono.blocId);
   if (s.dernierBloc) return s.blocs.find((b) => b.id === s.dernierBloc) || s.blocs.find((b) => !blocFini(b));
-  return s.blocs.find((b) => !blocFini(b)) || s.blocs[0];
+  return s.blocs.find((b) => !blocFini(b) && actifs(b).length) || s.blocs[0];
 }
 
 function dessinerChrono() {
   const s = S.seanceEnCours();
-  if (!s || location.hash.indexOf('#/seance') !== 0) { flottant.innerHTML = ''; return; }
+  if (!s || !location.hash.startsWith('#/seance')) { flottant.innerHTML = ''; return; }
   const b = blocCourant(s);
   const marche = !!s.chrono;
   flottant.innerHTML = `
     <div class="chrono ${marche ? 'marche' : ''}">
-      <div class="chrono-info">
-        <small>Repos</small>
-        <span>prévu ${duree(b?.repos || 0)}</span>
-      </div>
+      <div class="chrono-info"><small>Repos</small><span>prévu ${duree(b?.repos || 0)}</span></div>
       <div class="chrono-temps" data-chrono>${marche ? duree((Date.now() - s.chrono.depart) / 1000) : '0:00'}</div>
       <button class="chrono-btn" data-action="chrono" aria-label="${marche ? 'Arrêter' : 'Démarrer'} le chrono">${marche ? I.stop : I.play}</button>
     </div>`;
@@ -284,9 +374,9 @@ function dessinerChrono() {
 function basculerChrono() {
   const s = S.seanceEnCours();
   if (!s) return;
+  if (!s.debut) { S.lancer(s); vueSeance(); }
   if (!s.chrono) {
-    const b = blocCourant(s);
-    s.chrono = { depart: Date.now(), blocId: b?.id || null };
+    s.chrono = { depart: Date.now(), blocId: blocCourant(s)?.id || null };
   } else {
     const reel = Math.round((Date.now() - s.chrono.depart) / 1000);
     const b = s.blocs.find((x) => x.id === s.chrono.blocId);
@@ -301,7 +391,7 @@ function basculerChrono() {
 
 function tic() {
   const s = S.seanceEnCours();
-  if (!s) return;
+  if (!s || !s.debut) return;
   const t = duree((Date.now() - new Date(s.debut)) / 1000);
   document.querySelectorAll('[data-temps-seance]').forEach((el) => { el.textContent = t; });
   const c = document.querySelector('[data-chrono]');
@@ -331,14 +421,13 @@ async function gererVeille() {
 
 // --- Fenêtres -----------------------------------------------------------------------
 
-function ouvrir(html, onSubmit) {
-  couche.innerHTML = `<div class="fenetre" role="dialog" aria-modal="true"><div class="poignee"></div>${html}</div>`;
+function ouvrirFenetre(html, onSubmit) {
+  couche.innerHTML = `<div class="fenetre" role="dialog" aria-modal="true"><div class="poignee-fenetre"></div>${html}</div>`;
   couche.hidden = false;
   document.body.classList.add('fige');
   couche.onclick = (ev) => { if (ev.target === couche) fermer(); };
   const f = couche.querySelector('form');
   if (f && onSubmit) f.onsubmit = (ev) => { ev.preventDefault(); onSubmit(new FormData(f), f); };
-  return couche.querySelector('.fenetre');
 }
 
 function fermer() {
@@ -365,9 +454,9 @@ function stepper(nom, libelle, valeur, pas, unite) {
     <div class="stepper">
       <span class="stepper-lib">${libelle}</span>
       <div class="stepper-ligne">
-        <button type="button" class="btn-rond" data-pas="-${pas}" data-champ="${nom}" aria-label="Moins">${I.moins}</button>
-        <label class="stepper-champ"><input name="${nom}" inputmode="decimal" value="${valeur ?? 0}" autocomplete="off"><span>${unite}</span></label>
-        <button type="button" class="btn-rond" data-pas="${pas}" data-champ="${nom}" aria-label="Plus">${I.plusPetit}</button>
+        <button type="button" class="btn-icone" data-pas="-${pas}" data-champ="${nom}" aria-label="Moins">${I.moins}</button>
+        <label class="stepper-champ"><input name="${nom}" inputmode="decimal" value="${String(valeur ?? 0).replace('.', ',')}" autocomplete="off"><span>${unite}</span></label>
+        <button type="button" class="btn-icone" data-pas="${pas}" data-champ="${nom}" aria-label="Plus">${I.plus}</button>
       </div>
     </div>`;
 }
@@ -375,7 +464,7 @@ function stepper(nom, libelle, valeur, pas, unite) {
 function champsMesure(mesure, v) {
   if (mesure === 'temps') return stepper('sec', 'Durée', v.sec, 5, 's');
   if (mesure === 'pdc') return stepper('reps', 'Répétitions', v.reps, 1, 'reps');
-  return stepper('kg', 'Charge', v.kg, 2.5, 'kg') + stepper('reps', 'Répétitions', v.reps, 1, 'reps');
+  return `<div class="deux">${stepper('kg', 'Charge', v.kg, 2.5, 'kg')}${stepper('reps', 'Répétitions', v.reps, 1, 'reps')}</div>`;
 }
 
 function lireMesure(fd, mesure) {
@@ -404,7 +493,7 @@ couche.addEventListener('click', (ev) => {
 function fenetreSerie(s, blocId, exoId, i) {
   const { e } = trouver(s, blocId, exoId);
   const v = e.series[i];
-  ouvrir(`
+  ouvrirFenetre(`
     <form>
       <h2>${esc(e.nom)} <small>série ${i + 1}</small></h2>
       ${v.prevu ? `<p class="aide">Prévu : ${texteSerie(e, v.prevu)}${e.uni ? ' par côté' : ''}</p>` : ''}
@@ -412,16 +501,18 @@ function fenetreSerie(s, blocId, exoId, i) {
       <button class="btn btn-principal btn-large">${v.fait ? 'Enregistrer' : 'Valider la série'}</button>
       <div class="actions-sec">
         ${v.fait ? '<button type="button" class="lien" data-f="defaire">Marquer non faite</button>' : ''}
-        <button type="button" class="lien danger" data-f="supprimer">Supprimer la série</button>
+        <button type="button" class="lien danger" data-f="supprimer">Retirer cette série</button>
       </div>
     </form>`, (fd) => {
     Object.assign(v, lireMesure(fd, e.mesure), { fait: true });
     s.dernierBloc = blocId;
+    if (!s.debut) S.lancer(s);
     S.enregistrer(); fermer(); vueSeance();
   });
   couche.querySelector('[data-f="supprimer"]').onclick = () => {
     e.series.splice(i, 1);
     S.enregistrer(); fermer(); vueSeance();
+    toast('Série retirée');
   };
   const d = couche.querySelector('[data-f="defaire"]');
   if (d) d.onclick = () => { v.fait = false; S.enregistrer(); fermer(); vueSeance(); };
@@ -437,7 +528,7 @@ function choixMesure(actuelle) {
 
 function fenetreExo(s, blocId, exoId) {
   const { b, e } = trouver(s, blocId, exoId);
-  ouvrir(`
+  ouvrirFenetre(`
     <form>
       <h2>Modifier l'exercice</h2>
       <p class="aide">Pour cette séance seulement : le modèle du split ne change pas.</p>
@@ -463,20 +554,20 @@ function fenetreExo(s, blocId, exoId) {
 }
 
 function fenetreAjout(s) {
-  const candidats = s.blocs.flatMap((b) => b.exos.filter((e) => !e.remplace && !e.ponctuel && !e.series.every((x) => x.fait) && !e.remplacePar));
-  ouvrir(`
+  const candidats = s.blocs.flatMap((b) => b.exos.filter((e) => !e.remplace && !e.ponctuel && !e.remplacePar && !e.series.every((x) => x.fait)));
+  ouvrirFenetre(`
     <form>
       <h2>Ajouter un exercice</h2>
       <label class="champ"><span>Exercice</span><input name="nom" required placeholder="Fentes marchées" autocomplete="off"></label>
       ${choixMesure('charge')}
       <div data-mesure-champs>${champsMesure('charge', { kg: 20, reps: 10 })}</div>
-      ${stepper('nb', 'Séries faites', 3, 1, 'séries')}
-      <label class="interrupteur"><input type="checkbox" name="uni"><span></span>Unilatéral</label>
+      <div class="deux">${stepper('nb', 'Séries faites', 3, 1, '')}
+        <label class="interrupteur bas"><input type="checkbox" name="uni"><span></span>Unilatéral</label></div>
       <input type="hidden" name="mode" value="">
       <p class="titre-choix">Cet exercice…</p>
       <button class="btn btn-large" data-mode="plus">vient en plus</button>
       ${candidats.length ? `<p class="titre-choix">…ou remplace :</p>
-        <div class="choix-remplace">${candidats.map((e) => `<button class="puce" data-mode="r:${e.id}">${esc(e.nom)}</button>`).join('')}</div>` : ''}
+        <div class="choix">${candidats.map((e) => `<button class="puce remplace" data-mode="r:${e.id}">${esc(e.nom)}</button>`).join('')}</div>` : ''}
     </form>`, (fd) => {
     const mode = fd.get('mode');
     const mesure = fd.get('mesure');
@@ -496,19 +587,18 @@ function fenetreAjout(s) {
       bloc.repos = s.blocs[pos]?.repos || 60;
     } else {
       exo.ponctuel = true;
-      const derFait = s.blocs.map((b) => b.exos.some((x) => x.series.some((y) => y.fait))).lastIndexOf(true);
-      pos = derFait;
+      pos = s.blocs.map((b) => b.exos.some((x) => x.series.some((y) => y.fait))).lastIndexOf(true);
     }
     s.blocs.splice(pos + 1, 0, bloc);
     s.dernierBloc = bloc.id;
+    if (!s.debut) S.lancer(s);
     S.enregistrer(); fermer(); vueSeance();
     toast(exo.remplace ? 'Ajouté en remplacement' : 'Ajouté en plus');
   });
   const f = couche.querySelector('form');
   f.querySelectorAll('[data-mode]').forEach((btn) => btn.addEventListener('click', () => { f.elements.mode.value = btn.dataset.mode; }));
   f.elements.mesure.addEventListener('change', () => {
-    const m = f.elements.mesure.value;
-    f.querySelector('[data-mesure-champs]').innerHTML = champsMesure(m, { kg: 20, reps: 10, sec: 30 });
+    f.querySelector('[data-mesure-champs]').innerHTML = champsMesure(f.elements.mesure.value, { kg: 20, reps: 10, sec: 30 });
   });
   setTimeout(() => f.elements.nom.focus(), 60);
 }
@@ -516,48 +606,25 @@ function fenetreAjout(s) {
 function fenetreFin(s) {
   const b = bilan(s);
   const restantes = b.series - b.faites;
-  ouvrir(`
+  ouvrirFenetre(`
     <form>
       <h2>Terminer la séance</h2>
-      ${restantes ? `<p class="aide">${restantes} série${restantes > 1 ? 's' : ''} non validée${restantes > 1 ? 's' : ''} : elle${restantes > 1 ? 's' : ''} ne compteront pas.</p>` : ''}
+      ${restantes ? `<p class="aide">${restantes} série${restantes > 1 ? 's' : ''} non validée${restantes > 1 ? 's' : ''} : elle${restantes > 1 ? 's' : ''} ne compte${restantes > 1 ? 'nt' : ''} pas.</p>` : ''}
       <p class="titre-choix">Ressenti</p>
       <div class="choix ressenti" data-groupe>
         <input type="hidden" name="ressenti" value="">
         ${Array.from({ length: 10 }, (_, i) => `<button type="button" class="puce" data-choix="${i + 1}">${i + 1}</button>`).join('')}
       </div>
-      <div class="ressenti-legende"><span>KO</span><span>En feu</span></div>
+      <div class="ressenti-legende"><span>KO</span><span>En forme</span></div>
       <label class="champ"><span>Note</span><textarea name="note" rows="2" placeholder="Fatigué, machine prise…"></textarea></label>
       <button class="btn btn-principal btn-large">Enregistrer la séance</button>
     </form>`, (fd) => {
     if (s.chrono) basculerChrono();
     S.terminer(s, { ressenti: parseInt(fd.get('ressenti'), 10) || null, note: fd.get('note').trim() });
     reorganiser = false;
-    resumeAOuvrir = s.id;
+    recapAOuvrir = s.id;
     aller('#/');
   });
-}
-
-function fenetreResume(s, nouvelle = false) {
-  const b = bilan(s);
-  const ponct = s.blocs.flatMap((x) => x.exos).filter((e) => e.ponctuel);
-  ouvrir(`
-    <h2><span class="pastille" style="--c:${s.couleur}"></span>${esc(s.nom)} <small>${dateCourte(s.date)}</small></h2>
-    ${nouvelle ? '<p class="aide">Séance enregistrée.</p>' : ''}
-    <div class="tuiles">
-      <div class="tuile"><small>Durée</small><strong>${dureeSeance(b.dureeSec)}</strong></div>
-      <div class="tuile"><small>Tonnage</small><strong>${kg(Math.round(b.tonnage))} kg</strong></div>
-      <div class="tuile"><small>Séries</small><strong>${b.faites}/${b.series}</strong></div>
-      <div class="tuile"><small>Ressenti</small><strong>${s.ressenti ? `${s.ressenti}/10` : '–'}</strong></div>
-      <div class="tuile large"><small>Repos moyen</small><strong>${b.nbRepos ? `${duree(b.reposMoyen)} <em>prévu ${duree(b.reposPrevuMoyen)}</em>` : 'Chrono non utilisé'}</strong></div>
-    </div>
-    ${ponct.length ? `<p class="aide">Ponctuel : ${ponct.map((e) => esc(e.nom)).join(', ')}</p>` : ''}
-    ${s.note ? `<p class="note-seance">${esc(s.note)}</p>` : ''}
-    <button class="btn btn-large" data-f="ok">Fermer</button>
-    <div class="actions-sec"><button type="button" class="lien danger" data-f="suppr">Supprimer cette séance</button></div>`);
-  couche.querySelector('[data-f="ok"]').onclick = fermer;
-  couche.querySelector('[data-f="suppr"]').onclick = () => {
-    if (confirmerDeux(couche.querySelector('[data-f="suppr"]'))) { S.supprimerSeance(s.id); fermer(); vueAccueil(); }
-  };
 }
 
 // Confirmation sans boîte de dialogue du navigateur : un second toucher confirme.
@@ -571,13 +638,13 @@ function confirmerDeux(btn) {
 }
 
 function fenetreMenuSeance(s) {
-  ouvrir(`
+  ouvrirFenetre(`
     <h2>${esc(s.nom)}</h2>
     <button class="btn btn-large" data-f="reorg">Réorganiser les blocs</button>
-    <div class="actions-sec"><button class="lien danger" data-f="abandon">Abandonner la séance</button></div>`);
+    <div class="actions-sec"><button class="lien danger" data-f="abandon">${s.debut ? 'Abandonner la séance' : 'Fermer sans démarrer'}</button></div>`);
   couche.querySelector('[data-f="reorg"]').onclick = () => { reorganiser = true; fermer(); vueSeance(); };
   couche.querySelector('[data-f="abandon"]').onclick = (ev) => {
-    if (confirmerDeux(ev.currentTarget)) { S.abandonner(s); fermer(); aller('#/'); }
+    if (!s.debut || confirmerDeux(ev.currentTarget)) { S.abandonner(s); fermer(); aller('#/'); }
   };
 }
 
@@ -605,6 +672,8 @@ async function sauvegarder() {
 
 // --- Actions ------------------------------------------------------------------------
 
+app.addEventListener('pointerdown', activerGlisser);
+
 app.addEventListener('click', (ev) => {
   const el = ev.target.closest('[data-action]');
   if (!el) return;
@@ -614,19 +683,26 @@ app.addEventListener('click', (ev) => {
     case 'accueil': return aller('#/');
     case 'reprendre': return aller('#/seance');
     case 'sauvegarder': return sauvegarder();
-    case 'teinte':
-      S.get().reglages.teinte = d.teinte;
+    case 'couleur':
+      S.get().reglages.couleur = d.couleur;
       S.enregistrer();
-      appliquerTeinte();
+      appliquerCouleur();
       return vueAccueil();
     case 'reinitialiser':
-      if (confirmerDeux(el)) { S.reinitialiser(); vueAccueil(); toast('Démo réinitialisée'); }
+      if (confirmerDeux(el)) { const c = couleur(); S.reinitialiser(); S.get().reglages.couleur = c; S.enregistrer(); vueAccueil(); toast('Démo réinitialisée'); }
       return;
-    case 'voir': return fenetreResume(S.seance(d.id));
-    case 'demarrer':
-      if (S.seanceEnCours()) return toast("Termine d'abord la séance en cours");
-      S.demarrer(S.programmeEnCours().id, d.split);
+    case 'recap': return aller(`#/recap/${d.id}`);
+    case 'supprimer-seance':
+      if (confirmerDeux(el)) { S.supprimerSeance(d.id); aller('#/'); toast('Séance supprimée'); }
+      return;
+    case 'ouvrir':
+      if (s) {
+        if (s.splitId === d.split) return aller('#/seance');
+        return toast(s.debut ? "Termine d'abord la séance en cours" : `${s.nom} est déjà ouverte : ferme-la d'abord`);
+      }
+      S.ouvrir(S.programmeEnCours().id, d.split);
       return aller('#/seance');
+    case 'lancer': S.lancer(s); return vueSeance();
     case 'veille': {
       const r = S.get().reglages;
       r.antiVeille = !r.antiVeille;
@@ -650,7 +726,7 @@ app.addEventListener('click', (ev) => {
       const { e } = trouver(s, d.bloc, d.exo);
       const v = e.series[+d.i];
       v.fait = !v.fait;
-      if (v.fait) s.dernierBloc = d.bloc;
+      if (v.fait) { s.dernierBloc = d.bloc; if (!s.debut) S.lancer(s); }
       S.enregistrer();
       return vueSeance();
     }
@@ -658,12 +734,25 @@ app.addEventListener('click', (ev) => {
     case 'editer-exo': return fenetreExo(s, d.bloc, d.exo);
     case 'ajouter-serie': {
       const b = s.blocs.find((x) => x.id === d.bloc);
-      b.exos.forEach((e) => {
+      actifs(b).forEach((e) => {
         const der = e.series[e.series.length - 1] || {};
         e.series.push({ prevu: null, kg: der.kg, reps: der.reps, sec: der.sec, fait: false });
       });
       S.enregistrer();
       return vueSeance();
+    }
+    case 'retirer-serie': {
+      // Retire la dernière série non faite ; sinon la dernière tout court.
+      const b = s.blocs.find((x) => x.id === d.bloc);
+      let retire = false;
+      actifs(b).forEach((e) => {
+        if (!e.series.length) return;
+        const i = e.series.map((x) => x.fait).lastIndexOf(false);
+        e.series.splice(i >= 0 ? i : e.series.length - 1, 1);
+        retire = true;
+      });
+      if (retire) { S.enregistrer(); vueSeance(); toast('Série retirée'); }
+      return;
     }
     case 'ajouter-exo': return fenetreAjout(s);
     case 'terminer': return fenetreFin(s);
@@ -678,7 +767,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 window.addEventListener('hashchange', route);
 document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !couche.hidden) fermer(); });
 
-appliquerTeinte();
+appliquerCouleur();
 suivreZoneVisible();
 route();
 setInterval(tic, 250);

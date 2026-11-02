@@ -12,7 +12,7 @@ export function programmeDemo() {
     debut: null,
     splits: [
       {
-        id: 's-legs', nom: 'Legs', couleur: '#ff7a45',
+        id: 's-legs', nom: 'Legs', couleur: '#2a9db5',
         blocs: [
           { id: 'b1', repos: 120, exos: [{ id: 'e-squat', nom: 'Squat', mesure: 'charge', series: ch(4, 60, 10) }] },
           { id: 'b2', repos: 90, exos: [{ id: 'e-presse', nom: 'Presse à cuisses', mesure: 'charge', series: ch(3, 120, 12) }] },
@@ -25,7 +25,7 @@ export function programmeDemo() {
         ],
       },
       {
-        id: 's-push', nom: 'Push / triceps', couleur: '#f2542d',
+        id: 's-push', nom: 'Push / triceps', couleur: '#3fae8e',
         blocs: [
           { id: 'b1', repos: 120, exos: [{ id: 'e-dc', nom: 'Développé couché', mesure: 'charge', series: ch(4, 50, 10) }] },
           { id: 'b2', repos: 90, exos: [{ id: 'e-dci', nom: 'Développé incliné haltères', mesure: 'charge', series: ch(3, 18, 10) }] },
@@ -36,7 +36,7 @@ export function programmeDemo() {
         ],
       },
       {
-        id: 's-pull', nom: 'Pull / biceps', couleur: '#ffa26b',
+        id: 's-pull', nom: 'Pull / biceps', couleur: '#5b8fd9',
         blocs: [
           { id: 'b1', repos: 120, exos: [{ id: 'e-tractions', nom: 'Tractions', mesure: 'pdc', series: pdc(4, 8) }] },
           { id: 'b2', repos: 90, exos: [{ id: 'e-rowing', nom: 'Rowing barre', mesure: 'charge', series: ch(3, 45, 10) }] },
@@ -44,7 +44,7 @@ export function programmeDemo() {
         ],
       },
       {
-        id: 's-core', nom: 'Shoulder / core', couleur: '#e0703a',
+        id: 's-core', nom: 'Shoulder / core', couleur: '#8a7fd1',
         blocs: [
           { id: 'b1', repos: 90, exos: [{ id: 'e-dm', nom: 'Développé militaire', mesure: 'charge', series: ch(4, 30, 10) }] },
           { id: 'b2', repos: 60, exos: [

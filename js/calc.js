@@ -60,9 +60,10 @@ export function bilan(seance) {
   const reel = repos.reduce((a, r) => a + r.reel, 0);
   const prevu = repos.reduce((a, r) => a + (r.prevu || 0), 0);
   const fin = seance.fin ? new Date(seance.fin) : new Date();
+  const debut = seance.debut ? new Date(seance.debut) : fin;
   return {
     tonnage, series, faites,
-    dureeSec: (fin - new Date(seance.debut)) / 1000,
+    dureeSec: (fin - debut) / 1000,
     reposMoyen: repos.length ? reel / repos.length : 0,
     reposPrevuMoyen: repos.length ? prevu / repos.length : 0,
     nbRepos: repos.length,
