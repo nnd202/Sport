@@ -304,3 +304,52 @@ export function annulerEdition(s) {
   etat.edition = null;
   enregistrer();
 }
+
+// --- Corps : points de mesure et mesures ---------------------------------------------------
+
+const POINTS_DEFAUT = [
+  ['Poids', 'kg', 'Général'], ['Masse grasse', '%', 'Général'], ['Tour de taille', 'cm', 'Tronc'],
+  ['Cou', 'cm', 'Tronc'], ['Épaules', 'cm', 'Tronc'], ['Poitrine', 'cm', 'Tronc'], ['Hanches', 'cm', 'Tronc'],
+  ['Bras droit, haut', 'cm', 'Bras'], ['Bras droit, milieu', 'cm', 'Bras'], ['Bras droit, bas', 'cm', 'Bras'],
+  ['Bras gauche, milieu', 'cm', 'Bras'], ['Avant-bras', 'cm', 'Bras'],
+  ['Cuisse droite, haut', 'cm', 'Jambes'], ['Cuisse droite, milieu', 'cm', 'Jambes'], ['Mollet', 'cm', 'Jambes'],
+];
+
+export function corps() {
+  etat.corps ||= { points: POINTS_DEFAUT.map(([nom, unite, groupe], i) => ({ id: `m${i + 1}`, nom, unite, groupe, actif: true })), mesures: [] };
+  return etat.corps;
+}
+
+export function enregistrerMesure(m) {
+  const c = corps();
+  if (!m.id) { m.id = uid('mes'); c.mesures.push(m); }
+  c.mesures.sort((a, b) => a.date.localeCompare(b.date));
+  enregistrer();
+}
+
+export function supprimerMesure(id) {
+  const c = corps();
+  c.mesures = c.mesures.filter((m) => m.id !== id);
+  enregistrer();
+}
+
+/** Valeurs d'un point dans le temps : [{ date, valeur, mesureId }]. */
+export function serieCorps(pointId) {
+  return corps().mesures.filter((m) => m.valeurs[pointId] != null).map((m) => ({ date: m.date, valeur: m.valeurs[pointId], mesureId: m.id }));
+}
+
+/**
+ * Évolution d'un point pendant un programme : dernière mesure au plus tard au début
+ * (ou première pendant), comparée à la dernière mesure jusqu'à la fin.
+ */
+export function evolutionPendant(p, pointId) {
+  if (!p.debut) return null;
+  const fin = p.fin || aujourdhui();
+  const serie = serieCorps(pointId);
+  const avant = serie.filter((x) => x.date <= p.debut);
+  const pendant = serie.filter((x) => x.date > p.debut && x.date <= fin);
+  const depart = avant[avant.length - 1] || pendant[0];
+  const arrivee = pendant[pendant.length - 1];
+  if (!depart || !arrivee || depart === arrivee) return null;
+  return { depart, arrivee, ecart: arrivee.valeur - depart.valeur };
+}

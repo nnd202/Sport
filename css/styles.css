@@ -404,3 +404,21 @@ input[type=date], input[type=time] { min-height: 42px; }
 .bulle[hidden] { display: none; }
 svg.graphe, svg.mini { stroke: none; fill: none; }
 svg.graphe text { stroke: none; }
+
+/* Corps */
+.evolutions { list-style: none; margin: 0; padding: 0; }
+.evolutions li { display: flex; align-items: baseline; gap: 8px; padding: 6px 0; border-top: 1px solid var(--trait); font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.evolutions li:first-child { border-top: 0; }
+.evolutions li span:first-child { flex: 1; }
+.ev-val { color: var(--texte-3); font-size: 12.5px; }
+.evolutions b { min-width: 64px; text-align: right; }
+.ligne-mesure { display: flex; align-items: center; gap: 10px; margin-top: -4px; }
+.ligne-mesure > span:first-child { flex: 1; font-size: 14.5px; }
+.ligne-mesure .mini-champ { flex: 0 0 130px; }
+.ligne-mesure input::placeholder { color: #b8bec6; font-weight: 500; }
+.ligne-point { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.nom-point { flex: 1; min-width: 0; border: 1.5px solid var(--trait); background: var(--fond); border-radius: 10px; padding: 7px 10px; font-size: 14.5px; outline: 0; }
+.nom-point:focus { border-color: var(--a); background: #fff; }
+.ligne-point select { border: 1.5px solid var(--trait); background: var(--fond); border-radius: 10px; padding: 7px 4px; font: inherit; font-size: 14px; }
+.ligne-histo.mesure::before { background: var(--degrade); }
+.couloirs .lc-nom small { white-space: nowrap; }

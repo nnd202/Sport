@@ -81,6 +81,7 @@ function route() {
   const m = h.match(/^#\/recap\/(.+)$/);
   if (m && S.seance(m[1])) return vueRecap(S.seance(m[1]));
   if (h === '#/programmes') return vueProgrammes();
+  if (h === '#/corps') return vueCorps();
   const mq = h.match(/^#\/p\/([^/]+)$/);
   if (mq && S.programme(mq[1])) return vuePrincipale(S.programme(mq[1]));
   const mc = h.match(/^#\/calendrier\/([^/]+)$/);
@@ -130,7 +131,7 @@ function dureeHeures(h1, h2) {
 
 // Boutons d'action nommés, posés dans le bandeau.
 function actions(liste) {
-  return `<nav class="actions-tete">${liste.map(([action, icone, libelle, extra = '']) =>
+  return `<nav class="actions-tete" style="grid-template-columns: repeat(${liste.length}, minmax(0, 1fr))">${liste.map(([action, icone, libelle, extra = '']) =>
     `<button class="action-tete" data-action="${action}" ${extra}>${I[icone]}<span>${libelle}</span></button>`).join('')}</nav>`;
 }
 
@@ -651,6 +652,158 @@ function fenetreLibre(p, libre) {
   };
 }
 
+// --- Corps : poids et mensurations -----------------------------------------------------
+
+const signe = (x, unite) => `${x > 0 ? '+' : x < 0 ? '−' : '±'}${kg(Math.abs(Math.round(x * 10) / 10))} ${unite}`;
+
+function corpsPendant(p) {
+  return S.corps().points.map((pt) => ({ pt, ev: S.evolutionPendant(p, pt.id) })).filter((x) => x.ev)
+    .map(({ pt, ev }) => `${pt.nom} : ${kg(ev.depart.valeur)} → ${kg(ev.arrivee.valeur)} ${pt.unite} (${signe(ev.ecart, pt.unite)}) · ${dateCourte(ev.depart.date)} → ${dateCourte(ev.arrivee.date)}`);
+}
+
+function vueCorps() {
+  flottant.innerHTML = '';
+  const c = S.corps();
+  const actifs = c.points.filter((pt) => pt.actif);
+  const groupes = [...new Set(actifs.map((pt) => pt.groupe || 'Autres'))];
+  const programmes = S.get().programmes.filter((p) => p.debut).sort((a, b) => b.debut.localeCompare(a.debut));
+
+  const lignePoint = (pt) => {
+    const serie = S.serieCorps(pt.id);
+    const der = serie[serie.length - 1];
+    const ecart = serie.length > 1 ? der.valeur - serie[0].valeur : null;
+    return `<li><button class="ligne-couloir" data-action="point-corps" data-id="${pt.id}">
+      <span class="lc-nom"><strong>${esc(pt.nom)}</strong><small>${der ? (serie.length > 1 ? `depuis le ${dateCourte(serie[0].date).slice(-5)}` : dateCourte(der.date)) : 'pas encore mesuré'}</small></span>
+      ${serie.length > 1 ? G.mini(serie.map((x) => x.valeur)) : ''}
+      <span class="lc-val">${der ? `<b>${kg(der.valeur)} ${pt.unite}</b><small>${ecart != null ? signe(ecart, pt.unite) : ''}</small>` : ''}</span>
+    </button></li>`;
+  };
+
+  const carteProgramme = (p) => {
+    const lignes = actifs.map((pt) => ({ pt, ev: S.evolutionPendant(p, pt.id) })).filter((x) => x.ev);
+    return `<div class="carte-graphe">
+      <p class="graphe-titre">${esc(p.nom)} <small>${dateCourte(p.debut)}${p.fin ? ` → ${dateCourte(p.fin)}` : ' → aujourd\'hui'}</small></p>
+      ${lignes.length ? `<ul class="evolutions">${lignes.map(({ pt, ev }) => `<li><span>${esc(pt.nom)}</span><span class="ev-val">${kg(ev.depart.valeur)} → ${kg(ev.arrivee.valeur)} ${pt.unite}</span><b>${signe(ev.ecart, pt.unite)}</b></li>`).join('')}</ul>`
+        : '<p class="phrase">Pas assez de mesures : il en faut une au début (ou juste avant) et une autre pendant le programme.</p>'}
+    </div>`;
+  };
+
+  app.innerHTML = `
+    <header class="bandeau-tete">
+      <div class="bandeau-ligne">
+        <button class="btn-icone sur-couleur" data-action="accueil" aria-label="Mes programmes">${I.retour}</button>
+        <div class="bandeau-titre"><small>Suivi physique</small><h1>Corps</h1></div>
+      </div>
+      ${actions([['nouvelle-mesure', 'plus', 'Nouvelle mesure'], ['points-corps', 'regle', 'Points de mesure']])}
+    </header>
+
+    ${c.mesures.length ? `
+      ${groupes.map((g) => {
+        const l = actifs.filter((pt) => (pt.groupe || 'Autres') === g);
+        return `<p class="sous-titre">${esc(g)}</p><ul class="couloirs">${l.map(lignePoint).join('')}</ul>`;
+      }).join('')}
+
+      ${programmes.length ? `<h3 class="titre-section">Pendant les programmes</h3>${programmes.map(carteProgramme).join('')}` : ''}
+
+      <h3 class="titre-section">Mesures</h3>
+      <ul class="historique">${c.mesures.slice().reverse().map((m) => {
+        const n = Object.keys(m.valeurs).length;
+        return `<li><button class="ligne-histo mesure" data-action="mesure" data-id="${m.id}">
+          <span class="histo-texte"><strong>${dateCourte(m.date)}</strong><small>${n} valeur${n > 1 ? 's' : ''}${m.note ? ` · ${esc(m.note)}` : ''}</small></span>
+          <span class="chevron-droit">${I.droite}</span></button></li>`;
+      }).join('')}</ul>`
+    : `<p class="vide">Note ton poids et tes mensurations quand tu veux : l'appli trace leur évolution et la croise avec tes programmes.</p>
+       <button class="btn btn-principal btn-large" data-action="nouvelle-mesure">${I.plus} Première mesure</button>`}`;
+  window.scrollTo(0, 0);
+}
+
+function fenetreMesure(m) {
+  const c = S.corps();
+  const nouvelle = !m;
+  m = m || { date: aujourdhui(), valeurs: {}, note: '' };
+  const actifs = c.points.filter((pt) => pt.actif || m.valeurs[pt.id] != null);
+  const groupes = [...new Set(actifs.map((pt) => pt.groupe || 'Autres'))];
+  const derniere = (pt) => { const s = S.serieCorps(pt.id).filter((x) => x.mesureId !== m.id); return s[s.length - 1]?.valeur; };
+  ouvrirFenetre(`
+    <form>
+      <h2>${nouvelle ? 'Nouvelle mesure' : `Mesure du ${dateCourte(m.date)}`}</h2>
+      <label class="champ"><span>Date</span><input type="date" name="date" value="${m.date}" max="${aujourdhui()}" required></label>
+      <p class="aide">Remplis seulement ce que tu as mesuré. En gris : ta dernière valeur.</p>
+      ${groupes.map((g) => `<p class="titre-choix">${esc(g)}</p>
+        ${actifs.filter((pt) => (pt.groupe || 'Autres') === g).map((pt) => `
+          <label class="ligne-mesure"><span>${esc(pt.nom)}</span>
+            <span class="mini-champ"><input name="v-${pt.id}" inputmode="decimal" value="${m.valeurs[pt.id] != null ? String(m.valeurs[pt.id]).replace('.', ',') : ''}" placeholder="${derniere(pt) != null ? String(derniere(pt)).replace('.', ',') : ''}"><span>${pt.unite}</span></span></label>`).join('')}`).join('')}
+      <label class="champ"><span>Note</span><textarea name="note" rows="2" placeholder="Le matin à jeun, après la séance…">${esc(m.note || '')}</textarea></label>
+      <button class="btn btn-principal btn-large">Enregistrer</button>
+      ${nouvelle ? '' : '<div class="actions-sec"><button type="button" class="lien danger" data-f="supprimer">Supprimer cette mesure</button></div>'}
+    </form>`, (fd) => {
+    const valeurs = {};
+    for (const pt of actifs) {
+      const v = String(fd.get(`v-${pt.id}`) || '').trim();
+      if (v) valeurs[pt.id] = Math.round(num(v) * 100) / 100;
+    }
+    if (!Object.keys(valeurs).length) return toast('Saisis au moins une valeur');
+    Object.assign(m, { date: fd.get('date'), valeurs, note: fd.get('note').trim() });
+    S.enregistrerMesure(m);
+    fermer(); vueCorps();
+    toast(nouvelle ? 'Mesure enregistrée' : 'Mesure modifiée');
+  });
+  const sup = couche.querySelector('[data-f="supprimer"]');
+  if (sup) sup.onclick = () => { if (confirmerDeux(sup)) { S.supprimerMesure(m.id); fermer(); vueCorps(); toast('Mesure supprimée'); } };
+}
+
+function fenetrePoints() {
+  const c = S.corps();
+  const ligne = (pt) => `
+    <div class="ligne-point" data-point="${pt.id}">
+      <label class="interrupteur" aria-label="Utiliser ce point"><input type="checkbox" name="actif" ${pt.actif ? 'checked' : ''}><span></span></label>
+      <input class="nom-point" name="nom" value="${esc(pt.nom)}" autocapitalize="sentences">
+      <select name="unite">${['cm', 'kg', '%'].map((u) => `<option ${u === pt.unite ? 'selected' : ''}>${u}</option>`).join('')}</select>
+    </div>`;
+  ouvrirFenetre(`
+    <form>
+      <h2>Points de mesure</h2>
+      <p class="aide">Décoche un point pour ne plus le proposer : ses anciennes valeurs restent. Ajoute autant de hauteurs que tu veux (bras haut, milieu, bas…).</p>
+      <div data-points>${c.points.map(ligne).join('')}</div>
+      <div class="deux"><label class="champ"><span>Nouveau point</span><input name="nouveau" placeholder="Bras gauche, haut" autocapitalize="sentences"></label>
+        <label class="champ"><span>Groupe</span><input name="groupe" placeholder="Bras" autocapitalize="sentences"></label></div>
+      <button class="btn btn-principal btn-large">Enregistrer</button>
+    </form>`, (fd, form) => {
+    form.querySelectorAll('[data-point]').forEach((l) => {
+      const pt = c.points.find((x) => x.id === l.dataset.point);
+      pt.actif = l.querySelector('[name=actif]').checked;
+      pt.nom = majuscule(l.querySelector('[name=nom]').value) || pt.nom;
+      pt.unite = l.querySelector('[name=unite]').value;
+    });
+    const n = majuscule(fd.get('nouveau'));
+    if (n) {
+      const groupe = majuscule(fd.get('groupe')) || 'Autres';
+      const pt = { id: uid('m'), nom: n, unite: n.toLowerCase().includes('poids') ? 'kg' : 'cm', groupe, actif: true };
+      // Rangé à la fin de son groupe.
+      const i = c.points.map((x) => x.groupe).lastIndexOf(groupe);
+      c.points.splice(i >= 0 ? i + 1 : c.points.length, 0, pt);
+    }
+    S.enregistrer(); fermer(); vueCorps();
+    toast('Points enregistrés');
+  });
+}
+
+function fenetrePointCorps(pt) {
+  const serie = S.serieCorps(pt.id);
+  const programmes = S.get().programmes.filter((p) => p.debut).sort((a, b) => b.debut.localeCompare(a.debut));
+  const evos = programmes.map((p) => ({ p, ev: S.evolutionPendant(p, pt.id) })).filter((x) => x.ev);
+  ouvrirFenetre(`
+    <h2>${esc(pt.nom)}</h2>
+    ${serie.length > 1 ? G.courbe({ points: serie.map((x) => ({ etiquette: dateCourte(x.date), y: x.valeur, tip: `${kg(x.valeur)} ${pt.unite}\n${dateCourte(x.date)}` })), format: (v) => kg(v) }) : '<p class="aide">Une deuxième mesure tracera la courbe.</p>'}
+    ${evos.length ? `<p class="titre-choix">Pendant les programmes</p><ul class="evolutions">${evos.map(({ p, ev }) => `<li><span>${esc(p.nom)}</span><span class="ev-val">${kg(ev.depart.valeur)} → ${kg(ev.arrivee.valeur)}</span><b>${signe(ev.ecart, pt.unite)}</b></li>`).join('')}</ul>` : ''}
+    <table class="table-couloir">
+      <thead><tr><th>Date</th><th>Valeur</th><th>Écart</th></tr></thead>
+      <tbody>${serie.slice().reverse().map((x, i, l) => `<tr><td>${dateCourte(x.date)}</td><td>${kg(x.valeur)} ${pt.unite}</td><td>${l[i + 1] ? signe(x.valeur - l[i + 1].valeur, pt.unite) : ''}</td></tr>`).join('')}</tbody>
+    </table>
+    <button class="btn btn-large" data-f="ok">Fermer</button>`);
+  couche.querySelector('[data-f="ok"]').onclick = fermer;
+}
+
 // --- Configuration : programmes ---------------------------------------------------
 
 const STATUTS = { 'en-cours': 'En cours', preparation: 'En préparation', termine: 'Terminé' };
@@ -790,7 +943,7 @@ function fenetreBascule(p) {
   const ex = couche.querySelector('[data-f="export"]');
   if (ex) ex.onclick = () => {
     const fin = { ...ancien, fin: champ.value };
-    partagerFichier(X.nomDonnees(ancien), X.texteDonnees(fin, S.seancesDe(ancien.id), S.bilanProgramme(ancien, champ.value), S.activitesDe(fin)));
+    partagerFichier(X.nomDonnees(ancien), X.texteDonnees(fin, S.seancesDe(ancien.id), S.bilanProgramme(ancien, champ.value), S.activitesDe(fin), corpsPendant(fin)));
   };
   if (ancien) champ.addEventListener('change', () => {
     couche.querySelector('[data-jours]').textContent = `${S.bilanProgramme(ancien, champ.value).jours} j`;
@@ -1570,7 +1723,7 @@ app.addEventListener('click', (ev) => {
     case 'reprendre': return aller('#/seance');
     case 'sauvegarder': return fenetreSauvegarde();
     case 'export-structure': { const pr = S.programme(d.id); return partagerFichier(X.nomStructure(pr), X.texteStructure(pr)); }
-    case 'export-donnees': { const pr = S.programme(d.id); return partagerFichier(X.nomDonnees(pr), X.texteDonnees(pr, S.seancesDe(pr.id), S.bilanProgramme(pr), S.activitesDe(pr))); }
+    case 'export-donnees': { const pr = S.programme(d.id); return partagerFichier(X.nomDonnees(pr), X.texteDonnees(pr, S.seancesDe(pr.id), S.bilanProgramme(pr), S.activitesDe(pr), corpsPendant(pr))); }
     case 'couleur':
       S.get().reglages.couleur = d.couleur;
       S.enregistrer();
@@ -1611,7 +1764,11 @@ app.addEventListener('click', (ev) => {
       toast('Dates appliquées aux splits');
       return aller(`#/p/${pr.id}`);
     }
-    case 'mensurations': return toast('Les mensurations arrivent à l\'étape 5');
+    case 'mensurations': return aller('#/corps');
+    case 'nouvelle-mesure': return fenetreMesure(null);
+    case 'mesure': return fenetreMesure(S.corps().mesures.find((m) => m.id === d.id));
+    case 'points-corps': return fenetrePoints();
+    case 'point-corps': return fenetrePointCorps(S.corps().points.find((x) => x.id === d.id));
     case 'programme': retourConfig = d.depuis === 'gestion' ? 'gestion' : retourConfig; return aller(`#/programme/${d.id}`);
     case 'split': return aller(`#/split/${d.programme}/${d.split}`);
     case 'nouveau-programme':

@@ -46,7 +46,7 @@ export function texteStructure(p) {
 
 const pct = (x) => `${x > 0 ? '+' : ''}${Math.round(x * 100)} %`;
 
-export function texteDonnees(p, seances, b, activites = []) {
+export function texteDonnees(p, seances, b, activites = [], corps = []) {
   const out = [`SPORT — ${nomCycle(p).toUpperCase()} — DONNÉES`];
   out.push(p.debut ? `Du ${dateCourte(p.debut)} au ${dateCourte(p.fin || aujourdhui())}${p.fin ? '' : ' (en cours)'}` : 'Pas encore commencé', '');
   out.push(ligne, 'BILAN', ligne);
@@ -63,6 +63,9 @@ export function texteDonnees(p, seances, b, activites = []) {
       else out.push(`  ${x.split.nom} : ${kg(Math.round(x.debut))} → ${kg(Math.round(x.fin))} kg${x.evolution != null && x.nb > 1 ? ` (${pct(x.evolution)})` : ''} · ${x.nb} séance${x.nb > 1 ? 's' : ''}`);
     }
     out.push('', `Total soulevé sur le programme : ${kg(Math.round(b.tonnage / 100) / 10)} t`);
+  }
+  if (corps.length) {
+    out.push('', ligne, 'CORPS PENDANT LE PROGRAMME', ligne, ...corps);
   }
   out.push('', ligne, 'SÉANCES', ligne);
   for (const s of seances) {
