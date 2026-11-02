@@ -30,6 +30,10 @@ const I = {
   droite: '<svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>',
   crayon: '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>',
   liste: '<svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2" class="plein"/><circle cx="4.5" cy="12" r="1.2" class="plein"/><circle cx="4.5" cy="18" r="1.2" class="plein"/></svg>',
+  reglages: '<svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>',
+  calendrier: '<svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2.5"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>',
+  stats: '<svg viewBox="0 0 24 24"><path d="M5 20V11M12 20V5M19 20v-6"/></svg>',
+  regle: '<svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="8" rx="2"/><path d="M7 8v3M11 8v4M15 8v3M19 8v2"/></svg>',
   poignee: '<svg viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.5" class="plein"/><circle cx="15" cy="6" r="1.5" class="plein"/><circle cx="9" cy="12" r="1.5" class="plein"/><circle cx="15" cy="12" r="1.5" class="plein"/><circle cx="9" cy="18" r="1.5" class="plein"/><circle cx="15" cy="18" r="1.5" class="plein"/></svg>',
 };
 
@@ -40,6 +44,7 @@ const COULEURS = {
 };
 
 let recapAOuvrir = null;
+let retourConfig = 'programme';
 const couleur = () => 'C1';
 const appliquerCouleur = () => { document.documentElement.dataset.couleur = couleur(); };
 
@@ -71,6 +76,10 @@ function route() {
   const m = h.match(/^#\/recap\/(.+)$/);
   if (m && S.seance(m[1])) return vueRecap(S.seance(m[1]));
   if (h === '#/programmes') return vueProgrammes();
+  const mq = h.match(/^#\/p\/([^/]+)$/);
+  if (mq && S.programme(mq[1])) return vuePrincipale(S.programme(mq[1]));
+  const mt = h.match(/^#\/stats\/([^/]+)$/);
+  if (mt && S.programme(mt[1])) return vueStats(S.programme(mt[1]));
   const mp = h.match(/^#\/programme\/([^/]+)$/);
   if (mp && S.programme(mp[1])) return vueProgramme(S.programme(mp[1]));
   const ms = h.match(/^#\/split\/([^/]+)\/([^/]+)$/);
@@ -112,80 +121,136 @@ function dureeHeures(h1, h2) {
   return dureeSeance(Math.max(0, b - a) * 60);
 }
 
+// Boutons d'action nommés, posés dans le bandeau.
+function actions(liste) {
+  return `<nav class="actions-tete">${liste.map(([action, icone, libelle, extra = '']) =>
+    `<button class="action-tete" data-action="${action}" ${extra}>${I[icone]}<span>${libelle}</span></button>`).join('')}</nav>`;
+}
+
+function carteProgramme(p, enAvant = false) {
+  const b = S.bilanProgramme(p);
+  const se = S.seanceEnCours();
+  const seIci = se && se.programmeId === p.id;
+  const dates = p.debut ? `${dateCourte(p.debut)}${p.fin ? ` → ${dateCourte(p.fin)}` : ''}` : 'Pas encore commencé';
+  return `<li><button class="carte-programme ${enAvant ? 'en-avant' : ''}" data-action="ouvrir-programme" data-id="${p.id}">
+    <span class="cp-texte">
+      <strong>${esc(p.nom)}</strong>
+      <small>${dates}${b.seances ? ` · ${b.seances} séance${b.seances > 1 ? 's' : ''}` : ''}${!b.seances && p.splits.length ? ` · ${p.splits.length} split${p.splits.length > 1 ? 's' : ''}` : ''}</small>
+      ${seIci ? `<span class="cp-encours"><i style="--c:${se.couleur}"></i>${esc(se.nom)} en cours${se.debut && !se.passee ? ` · <span data-temps-seance>${duree((Date.now() - new Date(se.debut)) / 1000)}</span>` : ''}</span>` : ''}
+    </span>
+    <span class="chevron-droit">${I.droite}</span>
+  </button></li>`;
+}
+
 function vueAccueil() {
   gererVeille();
   flottant.innerHTML = '';
-  const p = S.programmeEnCours();
+  const tous = S.get().programmes;
+  const enCours = tous.filter((p) => p.statut === 'en-cours');
+  const prep = tous.filter((p) => p.statut === 'preparation');
+  const finis = tous.filter((p) => p.statut === 'termine').sort((a, b) => (b.fin || '').localeCompare(a.fin || ''));
+  const jour = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+
+  app.innerHTML = `
+    <header class="bandeau-tete">
+      <div class="bandeau-ligne"><div class="bandeau-titre"><small>${jour}</small><h1>Mes programmes</h1></div></div>
+      ${actions([['programmes', 'reglages', 'Gérer'], ['mensurations', 'regle', 'Mensurations'], ['sauvegarder', 'partage', 'Exporter']])}
+    </header>
+
+    ${enCours.length ? `<h3 class="titre-section">En cours</h3><ul class="liste-programmes">${enCours.map((p) => carteProgramme(p, true)).join('')}</ul>`
+      : `<p class="vide">Aucun programme en cours.</p>`}
+    ${prep.length ? `<h3 class="titre-section">En préparation</h3><ul class="liste-programmes">${prep.map((p) => carteProgramme(p)).join('')}</ul>` : ''}
+    ${finis.length ? `<h3 class="titre-section">Terminés</h3><ul class="liste-programmes">${finis.map((p) => carteProgramme(p)).join('')}</ul>` : ''}
+    ${tous.length ? '' : '<button class="btn btn-principal btn-large" data-action="programmes">Créer un programme</button>'}
+
+    <div class="pied">
+      <button class="lien discret" data-action="reinitialiser">Réinitialiser la démo</button>
+    </div>`;
+}
+
+// Écran d'un programme : sa vie au quotidien (séance en cours, splits, chronologie).
+function vuePrincipale(p) {
+  gererVeille();
+  flottant.innerHTML = '';
   const enCours = S.seanceEnCours();
-  if (!p) {
-    const prep = S.get().programmes.filter((x) => x.statut === 'preparation');
-    app.innerHTML = `
-      <header class="bandeau-tete">
-        <div class="bandeau-ligne">
-          <div class="bandeau-titre"><small>Sport</small><h1>Aucun programme en cours</h1></div>
-          <button class="btn-icone sur-couleur" data-action="programmes" aria-label="Programmes">${I.liste}</button>
-          <button class="btn-icone sur-couleur" data-action="sauvegarder" aria-label="Sauvegarder">${I.partage}</button>
-        </div>
-      </header>
-      <p class="vide">${prep.length ? `Démarre ${prep.length > 1 ? 'un de tes programmes en préparation' : esc(prep[0].nom)} quand tu es prêt.` : 'Crée ton premier programme pour commencer.'}</p>
-      <button class="btn btn-principal btn-large" data-action="${prep.length === 1 ? 'programme' : 'programmes'}" ${prep.length === 1 ? `data-id="${prep[0].id}"` : ''}>${prep.length ? 'Voir les programmes' : 'Créer un programme'}</button>`;
-    return;
-  }
+  const seIci = enCours && enCours.programmeId === p.id;
+  const actif = p.statut === 'en-cours';
   const faites = S.seancesDe(p.id);
   const chrono = S.chronologie(p);
 
   app.innerHTML = `
     <header class="bandeau-tete">
       <div class="bandeau-ligne">
-        <button class="bandeau-titre titre-modifiable" data-action="programme" data-id="${p.id}"><small>Programme en cours</small><h1>${esc(p.nom)} <span class="crayon">${I.droite}</span></h1></button>
-        <button class="btn-icone sur-couleur" data-action="programmes" aria-label="Programmes">${I.liste}</button>
-        <button class="btn-icone sur-couleur" data-action="sauvegarder" aria-label="Sauvegarder">${I.partage}</button>
+        <button class="btn-icone sur-couleur" data-action="accueil" aria-label="Mes programmes">${I.retour}</button>
+        <div class="bandeau-titre"><small>${STATUTS[p.statut]}</small><h1>${esc(p.nom)}</h1></div>
       </div>
       <div class="bandeau-chiffres">
         <span><b>${faites.length}</b> séance${faites.length > 1 ? 's' : ''}</span>
-        <span>${p.debut ? `depuis le ${dateCourte(p.debut)}` : 'pas encore commencé'}</span>
+        <span>${p.debut ? `${p.fin ? `du ${dateCourte(p.debut)} au ${dateCourte(p.fin)}` : `depuis le ${dateCourte(p.debut)}`}` : 'pas encore commencé'}</span>
       </div>
+      ${actions([['configurer', 'reglages', 'Configurer', `data-id="${p.id}"`], ['calendrier', 'calendrier', 'Calendrier', `data-id="${p.id}"`], ['stats', 'stats', 'Stats', `data-id="${p.id}"`]])}
     </header>
 
-    ${enCours ? `
+    ${p.statut === 'preparation' ? `
+      <p class="aide centre">Ce programme est en préparation : construis ses splits, puis démarre-le le jour J.</p>
+      <button class="btn btn-principal btn-large" data-action="basculer" data-id="${p.id}">${I.play} Démarrer ce programme</button>` : ''}
+
+    ${seIci ? `
       <h3 class="titre-section">Séance en cours</h3>
       <button class="split encours" data-action="reprendre" style="--c:${enCours.couleur}">
         <span class="split-texte"><strong>${esc(enCours.nom)}</strong><small>${enCours.debut ? `${bilan(enCours).faites}/${bilan(enCours).series} séries · ${kg(Math.round(bilan(enCours).tonnage))} kg` : 'Ouverte, pas commencée'}</small></span>
         <span class="encours-temps" ${enCours.passee ? '' : 'data-temps-seance'}>${enCours.passee ? dateCourte(enCours.date) : enCours.debut ? duree((Date.now() - new Date(enCours.debut)) / 1000) : 'Reprendre'}</span>
       </button>` : ''}
 
-    <h3 class="titre-section">Splits</h3>
-    ${p.splits.length ? '' : `<p class="vide">Ce programme n'a pas encore de split.</p><button class="btn btn-large" data-action="programme" data-id="${p.id}">Configurer le programme</button>`}
-    <ul class="pool" data-liste="splits" data-programme="${p.id}">
-      ${p.splits.map((sp) => {
-        const der = S.derniereDuSplit(p.id, sp.id);
-        const j = der ? joursDepuis(der.date) : null;
-        return `
-        <li class="split" data-id="${sp.id}" style="--c:${sp.couleur}">
-          <span class="poignee" data-glisser aria-label="Déplacer">${I.poignee}</span>
-          <span class="split-texte">
-            <strong>${esc(sp.nom)}</strong>
-            <small>${der ? `${dateCourte(der.date)} · ${j === 0 ? "aujourd'hui" : `il y a ${j} j`}` : 'Pas encore fait'}</small>
-          </span>
-          <button class="btn btn-petit" data-action="ouvrir" data-split="${sp.id}">Ouvrir</button>
-        </li>`;
-      }).join('')}
-    </ul>
+    ${p.statut !== 'termine' ? `
+      <h3 class="titre-section">Splits</h3>
+      ${p.splits.length ? '' : `<p class="vide">Ce programme n'a pas encore de split.</p><button class="btn btn-large" data-action="configurer" data-id="${p.id}">Configurer le programme</button>`}
+      <ul class="pool" data-liste="splits" data-programme="${p.id}">
+        ${p.splits.map((sp) => {
+          const der = S.derniereDuSplit(p.id, sp.id);
+          const j = der ? joursDepuis(der.date) : null;
+          return `
+          <li class="split" data-id="${sp.id}" style="--c:${sp.couleur}">
+            <span class="poignee" data-glisser aria-label="Déplacer">${I.poignee}</span>
+            <span class="split-texte">
+              <strong>${esc(sp.nom)}</strong>
+              <small>${der ? `${dateCourte(der.date)} · ${j === 0 ? "aujourd'hui" : `il y a ${j} j`}` : 'Pas encore fait'}</small>
+            </span>
+            ${actif ? `<button class="btn btn-petit" data-action="ouvrir" data-split="${sp.id}">Ouvrir</button>` : ''}
+          </li>`;
+        }).join('')}
+      </ul>` : ''}
 
-    <div class="titre-ligne"><h3 class="titre-section">Séances et activités</h3>
-      <button class="lien petit" data-action="activite">${I.plus} Activité libre</button></div>
-    ${chrono.length ? `<ul class="historique">${chrono.slice().reverse().map(ligneChronologie).join('')}</ul>`
-      : '<p class="vide">Tes séances terminées et tes activités libres (rando, vélo…) apparaîtront ici, par date.</p>'}
-
-    <div class="pied">
-      <button class="lien discret" data-action="reinitialiser">Réinitialiser la démo</button>
-    </div>`;
+    ${p.debut ? `
+      <div class="titre-ligne"><h3 class="titre-section">Séances et activités</h3>
+        ${actif ? `<button class="lien petit" data-action="activite">${I.plus} Activité libre</button>` : ''}</div>
+      ${chrono.length ? `<ul class="historique">${chrono.slice().reverse().map(ligneChronologie).join('')}</ul>`
+        : '<p class="vide">Tes séances terminées et tes activités libres (rando, vélo…) apparaîtront ici, par date.</p>'}` : ''}`;
 
   if (recapAOuvrir) {
     const id = recapAOuvrir;
     recapAOuvrir = null;
     setTimeout(() => aller(`#/recap/${id}`), 0);
   }
+}
+
+function vueStats(p) {
+  flottant.innerHTML = '';
+  const b = S.bilanProgramme(p);
+  app.innerHTML = `
+    <header class="bandeau-tete">
+      <div class="bandeau-ligne">
+        <button class="btn-icone sur-couleur" data-action="ouvrir-programme" data-id="${p.id}" aria-label="Retour au programme">${I.retour}</button>
+        <div class="bandeau-titre"><small>${esc(p.nom)}</small><h1>Stats</h1></div>
+      </div>
+    </header>
+    ${p.debut ? `
+      <h3 class="titre-section">Bilan${p.statut === 'en-cours' ? ' à ce jour' : ''}</h3>
+      ${blocBilan(b)}
+      <button class="btn btn-large" data-action="export-donnees" data-id="${p.id}">${I.partage} Exporter les données</button>
+      <p class="aide centre">Courbes par exercice, repos et ressenti : à venir (étape 4).</p>`
+    : '<p class="vide">Les stats apparaîtront dès la première séance.</p>'}`;
+  window.scrollTo(0, 0);
 }
 
 // Glisser-déposer aimanté (splits de l'accueil et blocs de la séance).
@@ -361,7 +426,7 @@ function vueProgrammes() {
   const carte = (p) => {
     const b = S.bilanProgramme(p);
     const dates = p.debut ? `${dateCourte(p.debut)}${p.fin ? ` → ${dateCourte(p.fin)}` : ''}` : 'Pas encore commencé';
-    return `<li><button class="split ligne-prog" data-action="programme" data-id="${p.id}" style="--c:var(--b)">
+    return `<li><button class="split ligne-prog" data-action="programme" data-id="${p.id}" data-depuis="gestion" style="--c:var(--b)">
       <span class="split-texte"><strong>${esc(p.nom)}</strong><small>${dates} · ${p.splits.length} split${p.splits.length > 1 ? 's' : ''}${b.seances ? ` · ${b.seances} séance${b.seances > 1 ? 's' : ''}` : ''}</small></span>
       <span class="chevron-droit">${I.droite}</span>
     </button></li>`;
@@ -371,7 +436,7 @@ function vueProgrammes() {
     <header class="bandeau-tete">
       <div class="bandeau-ligne">
         <button class="btn-icone sur-couleur" data-action="accueil" aria-label="Accueil">${I.retour}</button>
-        <div class="bandeau-titre"><h1>Programmes</h1></div>
+        <div class="bandeau-titre"><small>Configuration</small><h1>Gérer les programmes</h1></div>
       </div>
     </header>
     ${section('en-cours')}${section('preparation')}${section('termine')}
@@ -382,12 +447,13 @@ function vueProgrammes() {
 function vueProgramme(p) {
   flottant.innerHTML = '';
   const b = S.bilanProgramme(p);
+  void b;
   const actuel = S.programmeEnCours();
   app.innerHTML = `
     <header class="bandeau-tete">
       <div class="bandeau-ligne">
-        <button class="btn-icone sur-couleur" data-action="programmes" aria-label="Programmes">${I.retour}</button>
-        <button class="bandeau-titre titre-modifiable" data-action="renommer-programme" data-id="${p.id}"><small>${STATUTS[p.statut]}</small><h1>${esc(p.nom)} <span class="crayon">${I.crayon}</span></h1></button>
+        <button class="btn-icone sur-couleur" data-action="${retourConfig === 'gestion' ? 'programmes' : 'ouvrir-programme'}" data-id="${p.id}" aria-label="Retour">${I.retour}</button>
+        <button class="bandeau-titre titre-modifiable" data-action="renommer-programme" data-id="${p.id}"><small>Configuration · ${STATUTS[p.statut].toLowerCase()}</small><h1>${esc(p.nom)} <span class="crayon">${I.crayon}</span></h1></button>
       </div>
       <div class="bandeau-chiffres">
         <span>${p.debut ? `${dateCourte(p.debut)}${p.fin ? ` → ${dateCourte(p.fin)}` : ''}` : 'Pas encore commencé'}</span>
@@ -395,11 +461,6 @@ function vueProgramme(p) {
       </div>
       ${p.statut === 'preparation' ? `<button class="btn-demarrer" data-action="basculer" data-id="${p.id}">${I.play} Démarrer ce programme</button>` : ''}
     </header>
-
-    ${p.debut ? `
-      <h3 class="titre-section">Bilan${p.statut === 'en-cours' ? ' à ce jour' : ''}</h3>
-      ${blocBilan(b)}
-      <button class="btn btn-large" data-action="export-donnees" data-id="${p.id}">${I.partage} Exporter les données</button>` : ''}
 
     <div class="titre-ligne"><h3 class="titre-section">Splits</h3>
       ${p.splits.length ? `<button class="lien petit" data-action="export-structure" data-id="${p.id}">${I.partage} Structure</button>` : ''}</div>
@@ -487,7 +548,7 @@ function fenetreBascule(p) {
     S.basculer(p, fd.get('date'));
     fermer();
     toast(`${p.nom} démarré`);
-    aller('#/');
+    aller(`#/p/${p.id}`);
   });
   const champ = couche.querySelector('[name=date]');
   const ex = couche.querySelector('[data-f="export"]');
@@ -777,7 +838,7 @@ function vueSeance() {
   app.innerHTML = `
     <header class="bandeau-tete seance" style="--c:${s.couleur}">
       <div class="bandeau-ligne">
-        <button class="btn-icone sur-couleur" data-action="accueil" aria-label="Accueil">${I.retour}</button>
+        <button class="btn-icone sur-couleur" data-action="ouvrir-programme" data-id="${s.programmeId}" aria-label="Retour au programme">${I.retour}</button>
         <div class="bandeau-titre"><h1>${esc(s.nom)}</h1>
           <small>${s.passee ? `Séance du ${dateCourte(s.date)}${S.heure(s.debut) !== '12:00' ? ` · ${S.heure(s.debut)}` : ''}` : s.debut ? `${dateCourte(s.date)} · <span data-temps-seance>${duree(b.dureeSec)}</span>` : 'Pas commencée'}</small></div>
         <button class="btn-icone sur-couleur ${r.antiVeille ? 'actif' : ''}" data-action="veille" aria-label="Garder l'écran allumé" aria-pressed="${r.antiVeille}">${I.ecran}</button>
@@ -812,7 +873,7 @@ function vueRecap(s) {
   app.innerHTML = `
     <header class="bandeau-tete seance" style="--c:${s.couleur}">
       <div class="bandeau-ligne">
-        <button class="btn-icone sur-couleur" data-action="accueil" aria-label="Accueil">${I.retour}</button>
+        <button class="btn-icone sur-couleur" data-action="ouvrir-programme" data-id="${s.programmeId}" aria-label="Retour au programme">${I.retour}</button>
         <button class="bandeau-titre titre-modifiable" data-action="dater" data-id="${s.id}"><h1>${esc(s.nom)}</h1><small>${dateCourte(s.date)}${S.heure(s.debut) !== '12:00' ? ` · ${S.heure(s.debut)}` : ''} · terminée <span class="crayon">${I.crayon}</span></small></button>
       </div>
     </header>
@@ -1150,7 +1211,7 @@ function fenetreFin(s) {
     if (s.chrono) basculerChrono();
     S.terminer(s, { ressenti: parseInt(fd.get('ressenti'), 10) || null, note: fd.get('note').trim() });
     recapAOuvrir = s.id;
-    aller('#/');
+    aller(`#/p/${s.programmeId}`);
   });
 }
 
@@ -1168,6 +1229,7 @@ function fenetreMenuSeance(s) {
   ouvrirFenetre(`
     <h2>${esc(s.nom)}</h2>
     <button class="btn btn-large" data-f="date">${s.passee ? `Séance du ${dateCourte(s.date)} : modifier` : 'Saisir à une autre date'}</button>
+    ${S.programme(s.programmeId)?.splits.some((x) => x.id === s.splitId) ? '<button class="btn btn-large" data-f="modele">Modifier le modèle de ce split</button>' : ''}
     <div class="deux">
       <button class="btn" data-f="replier">Tout replier</button>
       <button class="btn" data-f="deplier">Tout déplier</button>
@@ -1176,10 +1238,12 @@ function fenetreMenuSeance(s) {
     <div class="actions-sec"><button class="lien danger" data-f="abandon">${s.debut ? 'Abandonner la séance' : 'Fermer sans démarrer'}</button></div>`);
   const tous = (v) => () => { s.blocs.forEach((b) => { b.replie = v; }); S.enregistrer(); fermer(); vueSeance(); };
   couche.querySelector('[data-f="date"]').onclick = () => fenetreDate(s, vueSeance);
+  const mo = couche.querySelector('[data-f="modele"]');
+  if (mo) mo.onclick = () => { retourConfig = 'programme'; fermer(); aller(`#/split/${s.programmeId}/${s.splitId}`); toast('Le modèle vaut pour les prochaines séances'); };
   couche.querySelector('[data-f="replier"]').onclick = tous(true);
   couche.querySelector('[data-f="deplier"]').onclick = tous(false);
   couche.querySelector('[data-f="abandon"]').onclick = (ev) => {
-    if (!s.debut || confirmerDeux(ev.currentTarget)) { S.abandonner(s); fermer(); aller('#/'); }
+    if (!s.debut || confirmerDeux(ev.currentTarget)) { S.abandonner(s); fermer(); aller(`#/p/${s.programmeId}`); }
   };
 }
 
@@ -1261,11 +1325,16 @@ app.addEventListener('click', (ev) => {
     case 'activite': return fenetreActivite(d.id ? S.activite(d.id) : null);
     case 'dater': { const se = S.seance(d.id); return fenetreDate(se, () => vueRecap(se)); }
     case 'programmes': return aller('#/programmes');
-    case 'programme': return aller(`#/programme/${d.id}`);
+    case 'ouvrir-programme': return aller(`#/p/${d.id}`);
+    case 'configurer': retourConfig = 'programme'; return aller(`#/programme/${d.id}`);
+    case 'stats': return aller(`#/stats/${d.id}`);
+    case 'calendrier': return toast('Le calendrier arrive à la prochaine étape');
+    case 'mensurations': return toast('Les mensurations arrivent à l\'étape 5');
+    case 'programme': retourConfig = d.depuis === 'gestion' ? 'gestion' : retourConfig; return aller(`#/programme/${d.id}`);
     case 'split': return aller(`#/split/${d.programme}/${d.split}`);
     case 'nouveau-programme':
       return fenetreNom('Nouveau programme', '', 'Il démarre en préparation : tu le construis pendant le programme en cours, puis tu le démarres le jour J.', (n) => {
-        const np = S.creerProgramme(n); fermer(); aller(`#/programme/${np.id}`);
+        const np = S.creerProgramme(n); fermer(); retourConfig = 'gestion'; aller(`#/programme/${np.id}`);
       });
     case 'renommer-programme': {
       const pr = S.programme(d.id);
@@ -1306,7 +1375,7 @@ app.addEventListener('click', (ev) => {
       return fenetreModeleExo(pr, sp, null, null);
     }
     case 'supprimer-seance':
-      if (confirmerDeux(el)) { S.supprimerSeance(d.id); aller('#/'); toast('Séance supprimée'); }
+      if (confirmerDeux(el)) { const pid = S.seance(d.id)?.programmeId; S.supprimerSeance(d.id); aller(pid ? `#/p/${pid}` : '#/'); toast('Séance supprimée'); }
       return;
     case 'ouvrir':
       if (s) {

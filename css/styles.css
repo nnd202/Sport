@@ -321,3 +321,20 @@ body.en-glisse { user-select: none; -webkit-user-select: none; }
 .suggestions .puce { padding: 5px 10px; font-size: 13px; }
 input[type=date], input[type=time] { min-height: 42px; }
 .titre-modifiable small .crayon svg { width: 13px; height: 13px; vertical-align: -2px; }
+
+/* Navigation : boutons d'action nommés dans le bandeau */
+.actions-tete { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+.action-tete { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 56px; padding: 7px 4px; border-radius: 13px; background: rgba(255, 255, 255, .14); border: 1px solid rgba(255, 255, 255, .18); color: #fff; font-size: 12.5px; font-weight: 600; }
+.action-tete svg { width: 20px; height: 20px; }
+.action-tete:active { background: rgba(255, 255, 255, .24); }
+
+/* Accueil : liste des programmes */
+.liste-programmes { list-style: none; margin: 0; padding: 0; }
+.carte-programme { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 12px 10px 12px 18px; margin-bottom: 8px; background: var(--carte); border-radius: var(--rayon); box-shadow: var(--ombre); position: relative; overflow: hidden; }
+.carte-programme::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--trait); }
+.carte-programme.en-avant { padding: 16px 10px 16px 18px; background: linear-gradient(120deg, var(--pale), #fff 70%); }
+.carte-programme.en-avant::before { background: var(--degrade); }
+.carte-programme.en-avant strong { font-size: 19px; }
+.cp-texte { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.cp-encours { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 13px; font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
+.cp-encours i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
