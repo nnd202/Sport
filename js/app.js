@@ -2,6 +2,9 @@
 import * as S from './store.js';
 import { uid, duree, dureeSeance, dateCourte, kg, texteSerie, bilan, MESURES, aujourdhui } from './calc.js';
 import { COULEURS_SPLITS } from './demo.js';
+import * as X from './export.js';
+
+const majuscule = (t) => { t = String(t || '').trim(); return t.charAt(0).toUpperCase() + t.slice(1); };
 
 const app = document.getElementById('app');
 const flottant = document.getElementById('flottant');
@@ -302,14 +305,13 @@ function vueProgramme(p) {
       ${p.statut === 'preparation' ? `<button class="btn-demarrer" data-action="basculer" data-id="${p.id}">${I.play} Démarrer ce programme</button>` : ''}
     </header>
 
-    ${p.statut === 'termine' ? `
-      <div class="tuiles">
-        <div class="tuile"><small>Séances</small><strong>${b.seances}</strong></div>
-        <div class="tuile"><small>Durée</small><strong>${b.jours} j</strong></div>
-        <div class="tuile large"><small>Tonnage total</small><strong>${kg(Math.round(b.tonnage))} kg</strong></div>
-      </div>` : ''}
+    ${p.debut ? `
+      <h3 class="titre-section">Bilan${p.statut === 'en-cours' ? ' à ce jour' : ''}</h3>
+      ${blocBilan(b)}
+      <button class="btn btn-large" data-action="export-donnees" data-id="${p.id}">${I.partage} Exporter les données</button>` : ''}
 
-    <h3 class="titre-section">Splits</h3>
+    <div class="titre-ligne"><h3 class="titre-section">Splits</h3>
+      ${p.splits.length ? `<button class="lien petit" data-action="export-structure" data-id="${p.id}">${I.partage} Structure</button>` : ''}</div>
     ${p.splits.length ? `<ul class="pool" data-liste="splits" data-programme="${p.id}">
       ${p.splits.map((sp) => `
         <li class="split" data-id="${sp.id}" style="--c:${sp.couleur}">
@@ -330,11 +332,33 @@ function vueProgramme(p) {
   window.scrollTo(0, 0);
 }
 
+function blocBilan(b) {
+  if (!b.seances) return '<p class="vide">Aucune séance terminée pour l\'instant.</p>';
+  const f = (x) => x.toLocaleString('fr-FR', { maximumFractionDigits: 1 });
+  return `
+    <div class="tuiles">
+      <div class="tuile"><small>Séances</small><strong>${b.seances} <em>en ${b.jours} j</em></strong></div>
+      <div class="tuile"><small>Rythme</small><strong>${f(b.parSemaine)} <em>par semaine</em></strong></div>
+      <div class="tuile"><small>Tonnage moyen</small><strong>${kg(Math.round(b.moyenne))} kg <em>/ séance</em></strong></div>
+      <div class="tuile"><small>Ressenti moyen</small><strong>${b.ressenti ? `${f(b.ressenti)}/10` : '–'}</strong></div>
+    </div>
+    <div class="progressions">
+      <p class="titre-choix">Progression du tonnage par split</p>
+      ${b.parSplit.map((x) => `
+        <div class="progression-split" style="--c:${x.split.couleur}">
+          <span class="nom">${esc(x.split.nom)}</span>
+          ${x.nb ? `<span class="valeurs">${kg(Math.round(x.debut))} → ${kg(Math.round(x.fin))} kg</span>
+            <span class="evolution ${x.evolution > 0 ? 'hausse' : x.evolution < 0 ? 'baisse' : ''}">${x.nb > 1 && x.evolution != null ? `${x.evolution > 0 ? '+' : ''}${Math.round(x.evolution * 100)} %` : '–'}</span>` : '<span class="valeurs">pas encore fait</span>'}
+        </div>`).join('')}
+      <p class="anecdote">Total soulevé : ${kg(Math.round(b.tonnage / 100) / 10)} t</p>
+    </div>`;
+}
+
 function fenetreNom(titre, valeur, aide, onOk, extra = '') {
   ouvrirFenetre(`
     <form>
       <h2>${titre}</h2>
-      <label class="champ"><span>Nom</span><input name="nom" value="${esc(valeur)}" required autocomplete="off"></label>
+      <label class="champ"><span>Nom</span><input name="nom" value="${esc(valeur)}" required autocomplete="off" autocapitalize="sentences"></label>
       ${extra}
       ${aide ? `<p class="aide">${aide}</p>` : ''}
       <button class="btn btn-principal btn-large">Enregistrer</button>
@@ -364,8 +388,8 @@ function fenetreBascule(p) {
         <div class="tuiles">
           <div class="tuile"><small>Séances</small><strong>${bil.seances}</strong></div>
           <div class="tuile"><small>Durée</small><strong data-jours>${bil.jours} j</strong></div>
-          <div class="tuile large"><small>Tonnage total</small><strong>${kg(Math.round(bil.tonnage))} kg</strong></div>
-        </div>` : ''}
+        </div>
+        <button type="button" class="btn btn-large" data-f="export">${I.partage} Exporter les données de ${esc(ancien.nom)}</button>` : ''}
       ${p.splits.length ? '' : '<p class="aide">Ce programme n\'a pas encore de split.</p>'}
       <button class="btn btn-principal btn-large">Démarrer le programme</button>
     </form>`, (fd) => {
@@ -375,6 +399,11 @@ function fenetreBascule(p) {
     aller('#/');
   });
   const champ = couche.querySelector('[name=date]');
+  const ex = couche.querySelector('[data-f="export"]');
+  if (ex) ex.onclick = () => {
+    const fin = { ...ancien, fin: champ.value };
+    partagerFichier(X.nomDonnees(ancien), X.texteDonnees(fin, S.seancesDe(ancien.id), S.bilanProgramme(ancien, champ.value)));
+  };
   if (ancien) champ.addEventListener('change', () => {
     couche.querySelector('[data-jours]').textContent = `${S.bilanProgramme(ancien, champ.value).jours} j`;
   });
@@ -462,7 +491,7 @@ function fenetreModeleExo(p, sp, bloc, exo) {
   ouvrirFenetre(`
     <form>
       <h2>${nouveau ? (bloc ? 'Enchaîner un exercice' : 'Nouvel exercice') : 'Exercice du modèle'}</h2>
-      <label class="champ"><span>Nom</span><input name="nom" value="${esc(e.nom)}" required autocomplete="off" placeholder="Squat"></label>
+      <label class="champ"><span>Nom</span><input name="nom" value="${esc(e.nom)}" required autocomplete="off" autocapitalize="sentences" placeholder="Squat"></label>
       ${choixMesure(e.mesure)}
       <label class="interrupteur"><input type="checkbox" name="uni" ${e.uni ? 'checked' : ''}><span></span>Unilatéral (valeurs par côté)</label>
       <p class="titre-choix">Séries prévues</p>
@@ -473,7 +502,7 @@ function fenetreModeleExo(p, sp, bloc, exo) {
       ${nouveau ? '' : '<div class="actions-sec"><button type="button" class="lien danger" data-f="supprimer">Supprimer cet exercice</button></div>'}
     </form>`, (fd, form) => {
     const mesure = fd.get('mesure');
-    const donnees = { nom: fd.get('nom').trim(), mesure, uni: fd.get('uni') === 'on', note: fd.get('note').trim(), series: lireLignes(form, mesure) };
+    const donnees = { nom: majuscule(fd.get('nom')), mesure, uni: fd.get('uni') === 'on', note: fd.get('note').trim(), series: lireLignes(form, mesure) };
     if (nouveau) {
       const ex = { id: uid('e'), ...donnees };
       if (bloc) bloc.exos.push(ex);
@@ -515,7 +544,7 @@ function fenetreModeleRepos(p, sp, bloc) {
     <form>
       <h2>Repos prévu</h2>
       <p class="aide">Entre deux séries${bloc.exos.length > 1 ? ' (ou deux tours)' : ''} de ce bloc.</p>
-      ${stepper('repos', 'Secondes', bloc.repos, 15, 's')}
+      ${stepper('repos', 'Secondes', bloc.repos, 10, 's')}
       <p class="aide centre" data-lisible>${duree(bloc.repos)}</p>
       <button class="btn btn-principal btn-large">Enregistrer</button>
     </form>`, (fd) => {
@@ -943,7 +972,7 @@ function fenetreExo(s, blocId, exoId) {
     <form>
       <h2>Modifier l'exercice</h2>
       <p class="aide">Pour cette séance seulement : le modèle du split ne change pas.</p>
-      <label class="champ"><span>Nom</span><input name="nom" value="${esc(e.nom)}" required></label>
+      <label class="champ"><span>Nom</span><input name="nom" value="${esc(e.nom)}" required autocapitalize="sentences"></label>
       ${choixMesure(e.mesure)}
       <label class="interrupteur"><input type="checkbox" name="uni" ${e.uni ? 'checked' : ''}><span></span>Unilatéral (valeurs par côté)</label>
       <label class="champ"><span>Note</span><textarea name="note" rows="2" placeholder="Bras opposé en tension, demi-reps en fin de série…">${esc(e.note)}</textarea></label>
@@ -952,7 +981,7 @@ function fenetreExo(s, blocId, exoId) {
     </form>`, (fd) => {
     const mesure = fd.get('mesure');
     if (mesure !== e.mesure) e.series.forEach((x) => { if (mesure === 'temps' && x.sec == null) x.sec = 30; if (mesure !== 'temps' && x.reps == null) x.reps = 10; if (mesure === 'charge' && x.kg == null) x.kg = 0; });
-    Object.assign(e, { nom: fd.get('nom').trim() || e.nom, mesure, uni: fd.get('uni') === 'on', note: fd.get('note').trim() });
+    Object.assign(e, { nom: majuscule(fd.get('nom')) || e.nom, mesure, uni: fd.get('uni') === 'on', note: fd.get('note').trim() });
     S.enregistrer(); fermer(); vueSeance();
   });
   const r = couche.querySelector('[data-f="retirer"]');
@@ -969,7 +998,7 @@ function fenetreAjout(s) {
   ouvrirFenetre(`
     <form>
       <h2>Ajouter un exercice</h2>
-      <label class="champ"><span>Exercice</span><input name="nom" required placeholder="Fentes marchées" autocomplete="off"></label>
+      <label class="champ"><span>Exercice</span><input name="nom" required placeholder="Fentes marchées" autocomplete="off" autocapitalize="sentences"></label>
       ${choixMesure('charge')}
       <div data-mesure-champs>${champsMesure('charge', { kg: 20, reps: 10 })}</div>
       <div class="deux">${stepper('nb', 'Séries faites', 3, 1, '')}
@@ -985,7 +1014,7 @@ function fenetreAjout(s) {
     const val = lireMesure(fd, mesure);
     const nb = Math.max(1, Math.round(num(fd.get('nb'))));
     const exo = {
-      id: uid('e'), src: null, nom: fd.get('nom').trim(), mesure, uni: fd.get('uni') === 'on', note: '',
+      id: uid('e'), src: null, nom: majuscule(fd.get('nom')), mesure, uni: fd.get('uni') === 'on', note: '',
       series: Array.from({ length: nb }, () => ({ prevu: null, ...val, fait: true, faitA: Date.now() })),
     };
     const bloc = { id: uid('b'), src: null, repos: 60, exos: [exo] };
@@ -1063,13 +1092,12 @@ function fenetreMenuSeance(s) {
 
 // --- Sauvegarde par le menu de partage ----------------------------------------------
 
-async function sauvegarder() {
-  const nom = S.nomSauvegarde();
-  const fichier = new File([S.contenuSauvegarde()], nom, { type: 'text/plain' });
+async function partagerFichier(nom, contenu) {
+  const fichier = new File([contenu], nom, { type: 'text/plain' });
   try {
     if (navigator.canShare?.({ files: [fichier] })) {
       await navigator.share({ files: [fichier], title: nom });
-      toast('Sauvegarde partagée');
+      toast('Fichier partagé');
       return;
     }
   } catch (e) {
@@ -1080,7 +1108,37 @@ async function sauvegarder() {
   a.download = nom;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-  toast('Sauvegarde téléchargée');
+  toast('Fichier téléchargé');
+}
+
+function fenetreSauvegarde() {
+  ouvrirFenetre(`
+    <h2>Sauvegarde</h2>
+    <p class="aide">L'export complet contient tout : programmes, séances, réglages. C'est lui qui sert à tout restaurer.</p>
+    <button class="btn btn-principal btn-large" data-f="exporter">${I.partage} Export complet</button>
+    <p class="titre-choix">Restaurer</p>
+    <p class="aide">Réimporter un export complet remplace toutes les données de cet appareil.</p>
+    <label class="btn btn-large fichier">Choisir un export complet<input type="file" accept=".txt,.json,text/plain,application/json" hidden></label>
+    <p class="aide centre">Les exports Structure et Données d'un programme se trouvent sur sa page.</p>`);
+  couche.querySelector('[data-f="exporter"]').onclick = () => partagerFichier(X.nomComplet(), S.contenuSauvegarde());
+  couche.querySelector('input[type=file]').onchange = async (ev) => {
+    const f = ev.target.files[0];
+    if (!f) return;
+    let donnees;
+    try { donnees = JSON.parse(await f.text()); } catch { return toast("Ce fichier n'est pas un export complet"); }
+    if (!Array.isArray(donnees?.programmes) || !Array.isArray(donnees?.seances)) return toast("Ce fichier n'est pas un export complet");
+    ouvrirFenetre(`
+      <h2>Tout remplacer ?</h2>
+      <p class="aide">${f.name}<br>${donnees.programmes.length} programme${donnees.programmes.length > 1 ? 's' : ''} · ${donnees.seances.length} séance${donnees.seances.length > 1 ? 's' : ''}${donnees.exporte ? ` · exporté le ${dateCourte(donnees.exporte.slice(0, 10))}` : ''}</p>
+      <p class="aide">Les données actuelles de cet appareil seront remplacées.</p>
+      <button class="btn btn-principal btn-large" data-f="ok">Remplacer</button>
+      <div class="actions-sec"><button class="lien" data-f="non">Annuler</button></div>`);
+    couche.querySelector('[data-f="non"]').onclick = fermer;
+    couche.querySelector('[data-f="ok"]').onclick = () => {
+      try { S.remplacerTout(donnees); } catch { return toast("Import impossible : fichier incomplet"); }
+      fermer(); toast('Données restaurées'); aller('#/'); route();
+    };
+  };
 }
 
 // --- Actions ------------------------------------------------------------------------
@@ -1095,7 +1153,9 @@ app.addEventListener('click', (ev) => {
   switch (d.action) {
     case 'accueil': return aller('#/');
     case 'reprendre': return aller('#/seance');
-    case 'sauvegarder': return sauvegarder();
+    case 'sauvegarder': return fenetreSauvegarde();
+    case 'export-structure': { const pr = S.programme(d.id); return partagerFichier(X.nomStructure(pr), X.texteStructure(pr)); }
+    case 'export-donnees': { const pr = S.programme(d.id); return partagerFichier(X.nomDonnees(pr), X.texteDonnees(pr, S.seancesDe(pr.id), S.bilanProgramme(pr))); }
     case 'couleur':
       S.get().reglages.couleur = d.couleur;
       S.enregistrer();

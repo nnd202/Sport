@@ -298,3 +298,19 @@ body.en-glisse { user-select: none; -webkit-user-select: none; }
 .mini-champ span { color: var(--texte-3); font-size: 13px; }
 .fenetre .lien[data-f="ajouter-ligne"] { align-self: flex-start; margin-top: -6px; }
 .btn-principal + .vide { margin-top: 0; }
+
+.titre-ligne { display: flex; align-items: baseline; justify-content: space-between; }
+.lien.petit { font-size: 13px; }
+.fichier { cursor: pointer; }
+.progressions { background: var(--carte); border-radius: var(--rayon); box-shadow: var(--ombre); padding: 10px 14px 4px; margin-bottom: 10px; }
+.progression-split { display: flex; align-items: baseline; gap: 8px; padding: 7px 0 7px 10px; border-top: 1px solid var(--trait); position: relative; font-variant-numeric: tabular-nums; }
+.progression-split::before { content: ""; position: absolute; left: 0; top: 9px; bottom: 9px; width: 3px; border-radius: 2px; background: var(--c); }
+.progressions .titre-choix { margin: 0 0 6px; }
+.progression-split .nom { flex: 1; font-weight: 600; }
+.progression-split .valeurs { color: var(--texte-2); font-size: 13.5px; }
+.progression-split .evolution { min-width: 50px; text-align: right; font-weight: 600; color: var(--texte-3); font-size: 13.5px; }
+.progression-split .evolution.hausse { color: var(--accent); }
+.progression-split .evolution.baisse { color: #b0705c; }
+.anecdote { font-size: 12.5px; color: var(--texte-3); text-align: right; margin: 6px 0 8px; border-top: 1px solid var(--trait); padding-top: 8px; }
+.couleurs-split { gap: 8px; }
+.pastille-couleur { width: 32px; height: 32px; }

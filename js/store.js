@@ -94,10 +94,6 @@ export function reinitialiser() {
 
 // --- Sauvegarde -----------------------------------------------------------------
 
-export function nomSauvegarde() {
-  return `${aujourdhui().replaceAll('-', '')} - Export Sport.txt`;
-}
-
 export function contenuSauvegarde() {
   return JSON.stringify({ appli: 'Sport', exporte: new Date().toISOString(), ...etat }, null, 2);
 }
@@ -135,11 +131,38 @@ export function supprimerSplit(p, splitId) {
   enregistrer();
 }
 
-/** Bilan d'un programme : séances, jours écoulés, tonnage total. */
+/** Bilan d'un programme : séances, jours, rythme, tonnage moyen, progression par split, repos, ressenti. */
 export function bilanProgramme(p, jusqua = p.fin || aujourdhui()) {
   const l = seancesDe(p.id);
   const jours = p.debut ? Math.round((new Date(`${jusqua}T12:00:00`) - new Date(`${p.debut}T12:00:00`)) / 864e5) + 1 : 0;
-  return { seances: l.length, jours, tonnage: l.reduce((a, x) => a + bilan(x).tonnage, 0) };
+  const bilans = l.map((x) => bilan(x));
+  const tonnage = bilans.reduce((a, b) => a + b.tonnage, 0);
+  const repos = bilans.filter((b) => b.nbRepos);
+  const ressentis = l.filter((x) => x.ressenti).map((x) => x.ressenti);
+  const parSplit = p.splits.map((sp) => {
+    const ls = l.filter((x) => x.splitId === sp.id);
+    if (!ls.length) return { split: sp, nb: 0 };
+    const debut = bilan(ls[0]).tonnage, fin = bilan(ls[ls.length - 1]).tonnage;
+    return { split: sp, nb: ls.length, debut, fin, evolution: debut ? (fin - debut) / debut : null };
+  });
+  return {
+    seances: l.length, jours, tonnage,
+    parSemaine: jours ? (l.length / jours) * 7 : 0,
+    moyenne: l.length ? tonnage / l.length : 0,
+    dureeMoyenne: l.length ? bilans.reduce((a, b) => a + b.dureeSec, 0) / l.length : 0,
+    reposMoyen: repos.length ? repos.reduce((a, b) => a + b.reposMoyen, 0) / repos.length : 0,
+    reposPrevu: repos.length ? repos.reduce((a, b) => a + b.reposPrevuMoyen, 0) / repos.length : 0,
+    ressenti: ressentis.length ? ressentis.reduce((a, b) => a + b, 0) / ressentis.length : null,
+    parSplit,
+  };
+}
+
+export function remplacerTout(donnees) {
+  if (!donnees || !Array.isArray(donnees.programmes) || !Array.isArray(donnees.seances)) throw new Error('format');
+  const { appli, exporte, ...reste } = donnees;
+  etat = { version: 1, encours: null, reglages: { antiVeille: false }, ...reste };
+  if (etat.encours && !seance(etat.encours)) etat.encours = null;
+  enregistrer();
 }
 
 /** Bascule : clôture le programme en cours (s'il y en a un) et démarre p à la date donnée. */

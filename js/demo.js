@@ -1,5 +1,8 @@
-// Couleurs de split : distinctes mais douces (6 au besoin).
-export const COULEURS_SPLITS = ['#4fa8a0', '#6f8fd0', '#c68a9b', '#c9a35e', '#9a88c8', '#83aa72'];
+// Couleurs de split : distinctes mais douces.
+export const COULEURS_SPLITS = [
+  '#4fa8a0', '#6f8fd0', '#c68a9b', '#c9a35e', '#9a88c8', '#83aa72',
+  '#d08a6a', '#5fa3c4', '#b58fb8', '#8f9db0', '#bfae5a', '#6fb79a',
+];
 
 // Programme de démonstration inventé (le dépôt est public : jamais de vraies données ici).
 
