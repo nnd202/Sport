@@ -422,3 +422,7 @@ svg.graphe text { stroke: none; }
 .ligne-point select { border: 1.5px solid var(--trait); background: var(--fond); border-radius: 10px; padding: 7px 4px; font: inherit; font-size: 14px; }
 .ligne-histo.mesure::before { background: var(--degrade); }
 .couloirs .lc-nom small { white-space: nowrap; }
+
+.aide-pct { display: block; font-size: 12px; }
+.mini-champ.lest { flex: 0 0 92px; }
+.mini-champ.lest span:first-child { color: var(--texte-3); }

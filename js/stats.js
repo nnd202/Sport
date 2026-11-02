@@ -1,22 +1,16 @@
 // Calculs des stats d'un programme. Fonctions pures : aucune dépendance au DOM ni au stockage.
-import { bilan, texteSerie } from './calc.js';
+import { bilan, texteSerie, volumeSerie, enKg, chargeRep } from './calc.js';
 
 export const UNITES = { charge: 'kg', pdc: 'reps', temps: 's' };
 
-/** Volume d'un exercice dans une séance : tonnage (charge), reps (poids du corps) ou secondes (temps). */
-export function volumeExo(e) {
-  const cotes = e.uni ? 2 : 1;
-  let v = 0;
-  for (const s of e.series) {
-    if (!s.fait) continue;
-    if (e.mesure === 'temps') v += (s.sec || 0) * cotes;
-    else if (e.mesure === 'pdc') v += (s.reps || 0) * cotes;
-    else v += (s.kg || 0) * (s.reps || 0) * cotes;
-  }
-  return v;
+/** Volume d'un exercice dans une séance : tonnage (charge ou poids du corps chiffré), reps ou secondes. */
+export function volumeExo(e, date) {
+  return e.series.reduce((a, s) => a + volumeSerie(e, s, date), 0);
 }
 
-const chargeMax = (e) => (e.mesure === 'charge' ? Math.max(0, ...e.series.filter((s) => s.fait).map((s) => s.kg || 0)) : null);
+export const uniteExo = (e, date) => (enKg(e, date) ? 'kg' : e.mesure === 'temps' ? 's' : 'reps');
+
+const chargeMax = (e, date) => (enKg(e, date) ? Math.max(0, ...e.series.filter((s) => s.fait).map((s) => chargeRep(e, s, date) || 0)) : null);
 const faites = (e) => e.series.filter((s) => s.fait);
 
 /**
@@ -39,7 +33,7 @@ export function couloirs(p, seances) {
     for (const e of tous) {
       if (e.remplacePar) continue;
       if (e.ponctuel) {
-        if (faites(e).length) ponctuels.push({ nom: e.nom, date: s.date, seanceId: s.id, volume: volumeExo(e), mesure: e.mesure, texte: faites(e).map((x) => texteSerie(e, x)).join(', ') });
+        if (faites(e).length) ponctuels.push({ nom: e.nom, date: s.date, seanceId: s.id, volume: volumeExo(e, s.date), mesure: e.mesure, unite: uniteExo(e, s.date), texte: faites(e).map((x) => texteSerie(e, x)).join(', ') });
         continue;
       }
       let cle = e.src;
@@ -59,16 +53,17 @@ export function couloirs(p, seances) {
       }
       const precedent = c.points[c.points.length - 1];
       c.points.push({
-        seanceId: s.id, date: s.date, volume: volumeExo(e), mesure: e.mesure, remplace,
-        chargeMax: chargeMax(e), uni: !!e.uni,
-        changement: !!precedent && !remplace && !precedent.remplace && (precedent.uni !== !!e.uni || precedent.mesure !== e.mesure),
+        seanceId: s.id, date: s.date, volume: volumeExo(e, s.date), mesure: e.mesure, unite: uniteExo(e, s.date), remplace,
+        chargeMax: chargeMax(e, s.date), uni: !!e.uni,
+        changement: !!precedent && !remplace && !precedent.remplace && (precedent.uni !== !!e.uni || precedent.unite !== uniteExo(e, s.date)),
         texte: faites(e).map((x) => texteSerie(e, x)).join(', '),
         nbSeries: faites(e).length, nbPrevues: e.series.length,
       });
     }
   }
   for (const c of ordre) {
-    const pts = c.points.filter((x) => !x.remplace && x.mesure === c.mesure);
+    c.unite = c.points[c.points.length - 1]?.unite || (c.mesure === 'temps' ? 's' : c.mesure === 'pdc' ? 'reps' : 'kg');
+    const pts = c.points.filter((x) => !x.remplace && x.unite === c.unite);
     c.debut = pts[0]?.volume ?? null;
     c.fin = pts[pts.length - 1]?.volume ?? null;
     c.evolution = pts.length > 1 && c.debut ? (c.fin - c.debut) / c.debut : null;

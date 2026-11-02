@@ -1,6 +1,6 @@
 // État de l'appli, gardé dans le stockage local du navigateur.
 import { programmeDemo, COULEURS_SPLITS } from './demo.js';
-import { nouvelleSeance, aujourdhui, uid, bilan } from './calc.js';
+import { nouvelleSeance, aujourdhui, uid, bilan, definirPoids } from './calc.js';
 
 const CLE = 'sport-etat';
 let etat = charger();
@@ -352,4 +352,29 @@ export function evolutionPendant(p, pointId) {
   const arrivee = pendant[pendant.length - 1];
   if (!depart || !arrivee || depart === arrivee) return null;
   return { depart, arrivee, ecart: arrivee.valeur - depart.valeur };
+}
+
+/** Point de mesure du poids : celui nommé « Poids » (ou le premier en kg). */
+export function pointPoids() {
+  const pts = corps().points;
+  return pts.find((x) => x.nom.trim().toLowerCase() === 'poids') || pts.find((x) => x.unite === 'kg') || null;
+}
+
+/** Dernière pesée au plus tard à cette date (sinon null : pas de calcul). */
+export function poidsAu(date) {
+  const pt = etat.corps ? pointPoids() : null;
+  if (!pt) return null;
+  const l = etat.corps.mesures.filter((m) => m.valeurs[pt.id] != null && (!date || m.date <= date));
+  return l.length ? l[l.length - 1].valeurs[pt.id] : null;
+}
+definirPoids(poidsAu);
+
+/** Applique le pourcentage d'un exercice du modèle à ses séances passées qui n'en ont pas. */
+export function propagerPct(exoModeleId, pct) {
+  let n = 0;
+  for (const s of etat.seances) for (const b of s.blocs) for (const e of b.exos) {
+    if (e.src === exoModeleId && e.mesure === 'pdc') { e.pct = pct; n++; }
+  }
+  enregistrer();
+  return n;
 }

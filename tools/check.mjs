@@ -1,7 +1,7 @@
 // Vérifications avant publication : node tools/check.mjs
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { nouvelleSeance, bilan, volumeSerie } from '../js/calc.js';
+import { nouvelleSeance, bilan, volumeSerie, definirPoids } from '../js/calc.js';
 import { programmeDemo } from '../js/demo.js';
 import { couloirs, ressentiPerformance } from '../js/stats.js';
 import { graduations } from '../js/graph.js';
@@ -55,5 +55,12 @@ ponctuels.length === 1 && ponctuels[0].volume === 450 ? ok('exercice en plus lis
 JSON.stringify(graduations(62, 138, 4, true)) === '[60,90,120,150]' ? ok('graduations de durée rondes') : ko(`graduations ${graduations(62, 138, 4, true)}`);
 s1.ressenti = 3; s2.ressenti = 8;
 ressentiPerformance([s1, s2]).points.length === 2 ? ok('ressenti et performance') : ko('ressenti');
+
+// 4. Poids du corps : pourcentage × dernière pesée + lest.
+definirPoids((date) => (date >= '2026-10-01' ? 80 : null));
+const trac = { mesure: 'pdc', pct: 95, series: [{ reps: 10, fait: true }, { reps: 10, lest: 10, fait: true }] };
+const vt = trac.series.reduce((a, x) => a + volumeSerie(trac, x, '2026-10-05'), 0);
+vt === 760 + 860 ? ok('tractions : 95 % de 80 kg, puis +10 kg de lest') : ko(`tractions ${vt}`);
+volumeSerie(trac, trac.series[0], '2026-09-01') === 10 ? ok('sans pesée : compté en répétitions') : ko('sans pesée');
 
 process.exit(erreurs ? 1 : 0);

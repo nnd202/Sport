@@ -1,6 +1,6 @@
 // Interface de Sport : accueil, séance, récap, chrono, fenêtres de saisie.
 import * as S from './store.js';
-import { uid, duree, dureeSeance, dateCourte, kg, texteSerie, bilan, MESURES, aujourdhui } from './calc.js';
+import { uid, duree, dureeSeance, dateCourte, kg, texteSerie, bilan, MESURES, aujourdhui, enKg, volumeSerie } from './calc.js';
 import { COULEURS_SPLITS } from './demo.js';
 import * as X from './export.js';
 import * as ST from './stats.js';
@@ -243,9 +243,9 @@ function vuePrincipale(p) {
   }
 }
 
-function fmtVolume(v, mesure) {
-  if (mesure === 'temps') return duree(v);
-  if (mesure === 'pdc') return `${Math.round(v)} reps`;
+function fmtVolume(v, unite) {
+  if (unite === 's' || unite === 'temps') return duree(v);
+  if (unite === 'reps' || unite === 'pdc') return `${Math.round(v)} reps`;
   return `${kg(Math.round(v))} kg`;
 }
 const fmtCourt = (v) => kg(Math.round(v));
@@ -277,7 +277,7 @@ function vueStats(p) {
     return `<li><button class="ligne-couloir" data-action="couloir" data-id="${c.id}">
       <span class="lc-nom"><strong>${esc(c.nom)}</strong><small>${pts.length ? `${pts.length} séance${pts.length > 1 ? 's' : ''}` : 'pas encore fait'}${c.retire ? ' · retiré du modèle' : ''}</small></span>
       ${pts.length ? G.mini(pts.map((x) => x.volume), pts.map((x, i) => (x.remplace ? i : -1)).filter((i) => i >= 0)) : ''}
-      <span class="lc-val">${pts.length ? `<b>${fmtVolume(pts[pts.length - 1].volume, pts[pts.length - 1].mesure)}</b><small class="${evo > 0 ? 'hausse' : evo < 0 ? 'baisse' : ''}">${evo != null ? pctTexte(evo) : '–'}</small>` : ''}</span>
+      <span class="lc-val">${pts.length ? `<b>${fmtVolume(pts[pts.length - 1].volume, pts[pts.length - 1].unite)}</b><small class="${evo > 0 ? 'hausse' : evo < 0 ? 'baisse' : ''}">${evo != null ? pctTexte(evo) : '–'}</small>` : ''}</span>
     </button></li>`;
   };
 
@@ -300,7 +300,7 @@ function vueStats(p) {
     }).join('')}
     ${couloirs.some((c) => !p.splits.some((sp) => sp.id === c.splitId)) ? `<ul class="couloirs">${couloirs.filter((c) => !p.splits.some((sp) => sp.id === c.splitId)).map(ligneCouloir).join('')}</ul>` : ''}
     ${ponctuels.length ? `<p class="sous-titre">Ponctuels <small>ajoutés « en plus » en séance</small></p>
-      <ul class="couloirs">${ponctuels.map((x) => `<li class="ligne-couloir statique"><span class="lc-nom"><strong>${esc(x.nom)}</strong><small>${dateCourte(x.date)} · ${esc(x.texte)}</small></span><span class="lc-val"><b>${fmtVolume(x.volume, x.mesure)}</b></span></li>`).join('')}</ul>` : ''}
+      <ul class="couloirs">${ponctuels.map((x) => `<li class="ligne-couloir statique"><span class="lc-nom"><strong>${esc(x.nom)}</strong><small>${dateCourte(x.date)} · ${esc(x.texte)}</small></span><span class="lc-val"><b>${fmtVolume(x.volume, x.unite)}</b></span></li>`).join('')}</ul>` : ''}
 
     <h3 class="titre-section">Repos</h3>
     ${repos.length ? `
@@ -353,14 +353,14 @@ function fenetreCouloir(c) {
   const pts = c.points;
   ouvrirFenetre(`
     <h2>${esc(c.nom)}</h2>
-    <p class="aide">${ST.UNITES[c.mesure] === 'kg' ? 'Tonnage' : c.mesure === 'pdc' ? 'Répétitions totales' : 'Durée totale'} par séance${c.evolution != null ? ` · <b>${pctTexte(c.evolution)}</b> entre la première et la dernière` : ''}.</p>
-    ${pts.length ? G.courbe({ points: pts.map((x) => ({ etiquette: dateCourte(x.date), y: x.volume, creux: !!x.remplace, tip: `${fmtVolume(x.volume, x.mesure)}\n${dateCourte(x.date)}${x.remplace ? ` · remplacé par ${x.remplace}` : ''}` })), format: c.mesure === 'temps' ? (v) => duree(v) : fmtCourt, temps: c.mesure === 'temps' }) : ''}
+    <p class="aide">${c.unite === 'kg' ? `Tonnage${c.mesure === 'pdc' ? ' (poids du corps × pourcentage + lest)' : ''}` : c.unite === 'reps' ? 'Répétitions totales' : 'Durée totale'} par séance${c.evolution != null ? ` · <b>${pctTexte(c.evolution)}</b> entre la première et la dernière` : ''}.</p>
+    ${pts.length ? G.courbe({ points: pts.map((x) => ({ etiquette: dateCourte(x.date), y: x.volume, creux: !!x.remplace, tip: `${fmtVolume(x.volume, x.unite)}\n${dateCourte(x.date)}${x.remplace ? ` · remplacé par ${x.remplace}` : ''}` })), format: c.unite === 's' ? (v) => duree(v) : fmtCourt, temps: c.unite === 's' }) : ''}
     <table class="table-couloir">
       <thead><tr><th>Date</th><th>Séries faites</th><th>Volume</th></tr></thead>
       <tbody>${pts.slice().reverse().map((x) => `<tr>
         <td>${dateCourte(x.date)}</td>
         <td>${esc(x.texte)}${x.nbSeries < x.nbPrevues ? ` <em>(${x.nbSeries}/${x.nbPrevues})</em>` : ''}${x.remplace ? `<br><em>remplacé par ${esc(x.remplace)}</em>` : ''}${x.changement ? `<br><em>forme modifiée${x.uni ? ' : unilatéral' : ''}</em>` : ''}</td>
-        <td>${fmtVolume(x.volume, x.mesure)}${x.chargeMax ? `<br><em>max ${kg(x.chargeMax)} kg</em>` : ''}</td></tr>`).join('')}</tbody>
+        <td>${fmtVolume(x.volume, x.unite)}${x.chargeMax ? `<br><em>max ${kg(x.chargeMax)} kg</em>` : ''}</td></tr>`).join('')}</tbody>
     </table>
     <button class="btn btn-large" data-f="ok">Fermer</button>`);
   couche.querySelector('[data-f="ok"]').onclick = fermer;
@@ -956,7 +956,7 @@ function texteModele(e) {
   if (!e.series.length) return 'aucune série';
   const t = e.series.map((x) => texteSerie(e, x));
   const pareil = t.every((x) => x === t[0]);
-  return pareil ? `${e.series.length} × ${t[0]}` : t.join(' · ');
+  return (pareil ? `${e.series.length} × ${t[0]}` : t.join(' · ')) + (e.mesure === 'pdc' && e.pct ? ` · ${kg(e.pct)} % du poids` : '');
 }
 
 function vueSplit(p, sp) {
@@ -1005,6 +1005,23 @@ function valeursParDefaut(mesure) {
   return { kg: 20, reps: 10 };
 }
 
+/** Pourcentage du poids du corps soulevé : valeurs de départ courantes, à ajuster. */
+function pctSuggere(nom) {
+  const n = String(nom || '').toLowerCase();
+  if (/pomp|push/.test(n)) return 70;
+  if (/dip/.test(n)) return 92;
+  if (/traction|pull.?up|chin/.test(n)) return 95;
+  if (/lombaire|hyperext|extension du dos/.test(n)) return 50;
+  return null;
+}
+
+function champPct(e) {
+  const poids = S.poidsAu(aujourdhui());
+  return `<label class="ligne-mesure"><span>Part du poids du corps soulevée<small class="aide-pct">${poids ? `ta dernière pesée : ${kg(poids)} kg` : 'aucune pesée : ajoute ton poids dans Mensurations'}</small></span>
+    <span class="mini-champ"><input name="pct" inputmode="decimal" value="${e.pct ?? pctSuggere(e.nom) ?? ''}" placeholder="—"><span>%</span></span></label>
+    <p class="aide">Ex. pompes ≈ 70 %, dips ≈ 92 %, tractions ≈ 95 %. Vide = compté en répétitions. Le lest (+ kg) se règle par série.</p>`;
+}
+
 function lignesSeries(mesure, series) {
   return series.map((x, i) => `
     <div class="ligne-modele" data-ligne>
@@ -1012,6 +1029,7 @@ function lignesSeries(mesure, series) {
       ${mesure === 'charge' ? `<label class="mini-champ"><input name="kg" inputmode="decimal" value="${String(x.kg ?? 0).replace('.', ',')}"><span>kg</span></label>` : ''}
       ${mesure === 'temps' ? `<label class="mini-champ"><input name="sec" inputmode="numeric" value="${x.sec ?? 30}"><span>s</span></label>`
         : `<label class="mini-champ"><input name="reps" inputmode="numeric" value="${x.reps ?? 10}"><span>reps</span></label>`}
+      ${mesure === 'pdc' ? `<label class="mini-champ lest"><span>+</span><input name="lest" inputmode="decimal" value="${x.lest ? String(x.lest).replace('.', ',') : ''}" placeholder="0"><span>kg</span></label>` : ''}
       <button type="button" class="btn-icone petit" data-f="retirer-ligne" aria-label="Retirer la série">${I.croix}</button>
     </div>`).join('');
 }
@@ -1020,7 +1038,7 @@ function lireLignes(form, mesure) {
   return [...form.querySelectorAll('[data-ligne]')].map((l) => {
     const v = (n) => l.querySelector(`[name="${n}"]`)?.value;
     if (mesure === 'temps') return { sec: Math.max(0, Math.round(num(v('sec')))) };
-    if (mesure === 'pdc') return { reps: Math.max(0, Math.round(num(v('reps')))) };
+    if (mesure === 'pdc') return { reps: Math.max(0, Math.round(num(v('reps')))), lest: Math.max(0, num(v('lest') || 0)) };
     return { kg: Math.max(0, num(v('kg'))), reps: Math.max(0, Math.round(num(v('reps')))) };
   });
 }
@@ -1035,6 +1053,7 @@ function fenetreModeleExo(p, sp, bloc, exo) {
       <label class="champ"><span>Nom</span><input name="nom" value="${esc(e.nom)}" required autocomplete="off" autocapitalize="sentences" placeholder="Squat"></label>
       ${choixMesure(e.mesure)}
       <label class="interrupteur"><input type="checkbox" name="uni" ${e.uni ? 'checked' : ''}><span></span>Unilatéral (valeurs par côté)</label>
+      <div data-pct ${e.mesure === 'pdc' ? '' : 'hidden'}>${champPct(e)}</div>
       <p class="titre-choix">Séries prévues</p>
       <div data-lignes>${lignesSeries(e.mesure, e.series)}</div>
       <button type="button" class="lien" data-f="ajouter-ligne">${I.plus} série</button>
@@ -1043,7 +1062,13 @@ function fenetreModeleExo(p, sp, bloc, exo) {
       ${nouveau ? '' : '<div class="actions-sec"><button type="button" class="lien danger" data-f="supprimer">Supprimer cet exercice</button></div>'}
     </form>`, (fd, form) => {
     const mesure = fd.get('mesure');
-    const donnees = { nom: majuscule(fd.get('nom')), mesure, uni: fd.get('uni') === 'on', note: fd.get('note').trim(), series: lireLignes(form, mesure) };
+    const pctTxt = String(fd.get('pct') || '').trim();
+    const pct = mesure === 'pdc' && pctTxt ? Math.min(200, Math.max(1, num(pctTxt))) : null;
+    const donnees = { nom: majuscule(fd.get('nom')), mesure, uni: fd.get('uni') === 'on', note: fd.get('note').trim(), series: lireLignes(form, mesure), pct };
+    if (!nouveau && pct !== (exo.pct ?? null) && mesure === 'pdc') {
+      const n = S.propagerPct(exo.id, pct);
+      if (n) setTimeout(() => toast(`Pourcentage appliqué aussi à ${n} séance${n > 1 ? 's' : ''} déjà faite${n > 1 ? 's' : ''}`), 50);
+    }
     if (nouveau) {
       const ex = { id: uid('e'), ...donnees };
       if (bloc) bloc.exos.push(ex);
@@ -1067,6 +1092,8 @@ function fenetreModeleExo(p, sp, bloc, exo) {
   });
   form.elements.mesure.addEventListener('change', () => {
     const mesure = form.elements.mesure.value;
+    form.querySelector('[data-pct]').hidden = mesure !== 'pdc';
+    if (mesure === 'pdc' && !form.elements.pct.value) form.elements.pct.value = pctSuggere(form.elements.nom.value) ?? '';
     const n = zone.querySelectorAll('[data-ligne]').length || 3;
     zone.innerHTML = lignesSeries(mesure, Array.from({ length: n }, () => valeursParDefaut(mesure)));
   });
@@ -1108,7 +1135,7 @@ function blocFini(b) { return actifs(b).every((e) => e.series.length && e.series
 function valeurs(e, s) {
   const u = e.uni ? '<i>/côté</i>' : '';
   if (e.mesure === 'temps') return `<span class="v"><b>${s.sec ?? 0}</b> s${u}</span>`;
-  if (e.mesure === 'pdc') return `<span class="v"><b>${s.reps ?? 0}</b> reps${u}</span>`;
+  if (e.mesure === 'pdc') return `<span class="v"><b>${s.reps ?? 0}</b> reps${u}</span>${s.lest ? `<span class="v"><b>+${kg(s.lest)}</b> kg</span>` : ''}`;
   return `<span class="v v-kg"><b>${kg(s.kg ?? 0)}</b> kg</span><span class="v"><b>${s.reps ?? 0}</b> reps${u}</span>`;
 }
 
@@ -1166,7 +1193,7 @@ function resumeBloc(b) {
   let faites = 0, total = 0, ton = 0;
   for (const e of actifs(b)) for (const x of e.series) {
     total++;
-    if (x.fait) { faites++; if (e.mesure === 'charge') ton += (x.kg || 0) * (x.reps || 0) * (e.uni ? 2 : 1); }
+    if (x.fait) { faites++; if (enKg(e, active()?.date)) ton += volumeSerie(e, x, active()?.date); }
   }
   return `${faites}/${total}${ton ? ` · ${kg(Math.round(ton))} kg` : ''}`;
 }
@@ -1269,7 +1296,7 @@ function vueRecap(s) {
     </header>
     <div class="tuiles">
       <div class="tuile"><small>Durée</small><strong>${dureeSeance(b.dureeSec)}</strong></div>
-      <div class="tuile"><small>Tonnage</small><strong>${kg(Math.round(b.tonnage))} kg</strong></div>
+      <div class="tuile"><small>Tonnage</small><strong>${kg(Math.round(b.tonnage))} kg${b.tonnageCorps ? ` <em>dont ${kg(Math.round(b.tonnageCorps))} au poids du corps</em>` : ''}</strong></div>
       <div class="tuile"><small>Séries</small><strong>${b.faites}/${b.series}</strong></div>
       <div class="tuile"><small>Ressenti</small><strong>${s.ressenti ? `${s.ressenti}/10` : '–'}</strong></div>
       <div class="tuile large"><small>Repos moyen</small><strong>${b.nbRepos ? `${duree(b.reposMoyen)} <em>prévu ${duree(b.reposPrevuMoyen)} · ${b.nbRepos} repos</em>` : '<em>Chrono non utilisé</em>'}</strong></div>
@@ -1278,7 +1305,7 @@ function vueRecap(s) {
     <div class="recap">
       ${s.blocs.map((bl) => bl.exos.map((e) => {
         if (e.remplacePar) return `<div class="recap-exo remplace"><s>${esc(e.nom)}</s> → ${esc(tous.find((x) => x.id === e.remplacePar)?.nom || '')}</div>`;
-        const ton = e.mesure === 'charge' ? e.series.reduce((a, x) => a + (x.fait ? (x.kg || 0) * (x.reps || 0) * (e.uni ? 2 : 1) : 0), 0) : 0;
+        const ton = enKg(e, s.date) ? e.series.reduce((a, x) => a + volumeSerie(e, x, s.date), 0) : 0;
         return `
         <div class="recap-exo">
           <div class="recap-tete"><strong>${esc(e.nom)}</strong>${etiquettes(e, s)}${ton ? `<span class="recap-ton">${kg(Math.round(ton))} kg</span>` : ''}</div>
@@ -1447,13 +1474,13 @@ function stepper(nom, libelle, valeur, pas, unite) {
 
 function champsMesure(mesure, v) {
   if (mesure === 'temps') return stepper('sec', 'Durée', v.sec, 5, 's');
-  if (mesure === 'pdc') return stepper('reps', 'Répétitions', v.reps, 1, 'reps');
+  if (mesure === 'pdc') return `<div class="deux">${stepper('reps', 'Répétitions', v.reps, 1, 'reps')}${stepper('lest', 'Lest', v.lest || 0, 2.5, 'kg')}</div>`;
   return `<div class="deux">${stepper('kg', 'Charge', v.kg, 2.5, 'kg')}${stepper('reps', 'Répétitions', v.reps, 1, 'reps')}</div>`;
 }
 
 function lireMesure(fd, mesure) {
   if (mesure === 'temps') return { sec: Math.max(0, Math.round(num(fd.get('sec')))) };
-  if (mesure === 'pdc') return { reps: Math.max(0, Math.round(num(fd.get('reps')))) };
+  if (mesure === 'pdc') return { reps: Math.max(0, Math.round(num(fd.get('reps')))), lest: fd.has('lest') ? Math.max(0, num(fd.get('lest'))) : 0 };
   return { kg: Math.max(0, num(fd.get('kg'))), reps: Math.max(0, Math.round(num(fd.get('reps')))) };
 }
 
@@ -1535,14 +1562,21 @@ function fenetreExo(s, blocId, exoId) {
       <label class="champ"><span>Nom</span><input name="nom" value="${esc(e.nom)}" required autocapitalize="sentences"></label>
       ${choixMesure(e.mesure)}
       <label class="interrupteur"><input type="checkbox" name="uni" ${e.uni ? 'checked' : ''}><span></span>Unilatéral (valeurs par côté)</label>
+      <div data-pct ${e.mesure === 'pdc' ? '' : 'hidden'}>${champPct(e)}</div>
       <label class="champ"><span>Note</span><textarea name="note" rows="2" placeholder="Bras opposé en tension, demi-reps en fin de série…">${esc(e.note)}</textarea></label>
       <button class="btn btn-principal btn-large">Enregistrer</button>
       ${e.remplace || e.ponctuel ? '<div class="actions-sec"><button type="button" class="lien danger" data-f="retirer">Retirer cet exercice</button></div>' : ''}
     </form>`, (fd) => {
     const mesure = fd.get('mesure');
     if (mesure !== e.mesure) e.series.forEach((x) => { if (mesure === 'temps' && x.sec == null) x.sec = 30; if (mesure !== 'temps' && x.reps == null) x.reps = 10; if (mesure === 'charge' && x.kg == null) x.kg = 0; });
-    Object.assign(e, { nom: majuscule(fd.get('nom')) || e.nom, mesure, uni: fd.get('uni') === 'on', note: fd.get('note').trim() });
+    const pctTxt = String(fd.get('pct') || '').trim();
+    Object.assign(e, { nom: majuscule(fd.get('nom')) || e.nom, mesure, uni: fd.get('uni') === 'on', note: fd.get('note').trim(), pct: mesure === 'pdc' && pctTxt ? num(pctTxt) : null });
     S.enregistrer(); fermer(); vueSeance();
+  });
+  const fe = couche.querySelector('form');
+  fe.elements.mesure.addEventListener('change', () => {
+    fe.querySelector('[data-pct]').hidden = fe.elements.mesure.value !== 'pdc';
+    if (fe.elements.mesure.value === 'pdc' && !fe.elements.pct.value) fe.elements.pct.value = pctSuggere(fe.elements.nom.value) ?? '';
   });
   const r = couche.querySelector('[data-f="retirer"]');
   if (r) r.onclick = () => {
@@ -1574,7 +1608,7 @@ function fenetreAjout(s) {
     const val = lireMesure(fd, mesure);
     const nb = Math.max(1, Math.round(num(fd.get('nb'))));
     const exo = {
-      id: uid('e'), src: null, nom: majuscule(fd.get('nom')), mesure, uni: fd.get('uni') === 'on', note: '',
+      id: uid('e'), src: null, nom: majuscule(fd.get('nom')), mesure, uni: fd.get('uni') === 'on', note: '', pct: mesure === 'pdc' ? pctSuggere(fd.get('nom')) : null,
       series: Array.from({ length: nb }, () => ({ prevu: null, ...val, fait: true, faitA: Date.now() })),
     };
     const bloc = { id: uid('b'), src: null, repos: 60, exos: [exo] };

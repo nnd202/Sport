@@ -33,28 +33,52 @@ export function dateCourte(iso) {
 
 export const kg = (n) => (Math.round(n * 100) / 100).toLocaleString('fr-FR');
 
-/** Texte d'une série : « 45 kg × 12 », « 45 s », « 10 reps ». */
+/** Texte d'une série : « 45 kg × 12 », « 45 s », « 10 reps », « 10 reps +10 kg ». */
 export function texteSerie(exo, s) {
   if (exo.mesure === 'temps') return `${s.sec ?? 0} s`;
-  if (exo.mesure === 'pdc') return `${s.reps ?? 0} reps`;
+  if (exo.mesure === 'pdc') return `${s.reps ?? 0} reps${s.lest ? ` +${kg(s.lest)} kg` : ''}`;
   return `${kg(s.kg ?? 0)} kg × ${s.reps ?? 0}`;
 }
 
-/** Volume d'une série faite : tonnage (charge), reps (pdc) ou secondes (temps). */
-export function volumeSerie(exo, s) {
+// Poids du corps à une date (dernière pesée au plus tard ce jour-là), fourni par le stockage.
+let poidsAu = () => null;
+export function definirPoids(fn) { poidsAu = fn; }
+
+/**
+ * Charge d'une répétition, en kg, ou null si elle ne se calcule pas.
+ * Poids du corps : poids × pourcentage de l'exercice + lest éventuel.
+ */
+export function chargeRep(exo, s, date) {
+  if (exo.mesure === 'charge') return s.kg || 0;
+  if (exo.mesure !== 'pdc' || !exo.pct) return null;
+  const poids = poidsAu(date);
+  if (!poids) return null;
+  return (poids * exo.pct) / 100 + (s.lest || 0);
+}
+
+/** Volume d'une série faite : tonnage si la charge est connue, sinon reps (pdc) ou secondes (temps). */
+export function volumeSerie(exo, s, date) {
   if (!s.fait) return 0;
   const cotes = exo.uni ? 2 : 1;
   if (exo.mesure === 'temps') return (s.sec || 0) * cotes;
-  if (exo.mesure === 'pdc') return (s.reps || 0) * cotes;
-  return (s.kg || 0) * (s.reps || 0) * cotes;
+  const c = chargeRep(exo, s, date);
+  if (c == null) return (s.reps || 0) * cotes;
+  return c * (s.reps || 0) * cotes;
 }
 
+/** L'exercice se compte-t-il en kg (tonnage) à cette date ? */
+export const enKg = (exo, date) => exo.mesure === 'charge' || (exo.mesure === 'pdc' && chargeRep(exo, {}, date) != null);
+
 export function bilan(seance) {
-  let tonnage = 0, series = 0, faites = 0;
+  let tonnage = 0, tonnageCorps = 0, series = 0, faites = 0;
   for (const b of seance.blocs) for (const e of b.exos) if (!e.remplacePar) for (const s of e.series) {
     series++;
     if (s.fait) faites++;
-    if (e.mesure === 'charge') tonnage += volumeSerie(e, s);
+    if (s.fait && enKg(e, seance.date)) {
+      const v = volumeSerie(e, s, seance.date);
+      tonnage += v;
+      if (e.mesure === 'pdc') tonnageCorps += v;
+    }
   }
   const repos = seance.repos || [];
   const reel = repos.reduce((a, r) => a + r.reel, 0);
@@ -62,7 +86,7 @@ export function bilan(seance) {
   const fin = seance.fin ? new Date(seance.fin) : new Date();
   const debut = seance.debut ? new Date(seance.debut) : fin;
   return {
-    tonnage, series, faites,
+    tonnage, tonnageCorps, series, faites,
     dureeSec: (fin - debut) / 1000,
     reposMoyen: repos.length ? reel / repos.length : 0,
     reposPrevuMoyen: repos.length ? prevu / repos.length : 0,
@@ -104,11 +128,12 @@ export function nouvelleSeance(programme, split, derniere) {
           nom: e.nom,
           mesure: e.mesure,
           uni: !!e.uni,
+          pct: e.pct ?? null,
           note: '',
           series: e.series.map((p, i) => {
             const v = avant?.series[i] ?? avant?.series[avant.series.length - 1];
-            const base = v ? { kg: v.kg, reps: v.reps, sec: v.sec } : p;
-            return { prevu: { ...p }, kg: base.kg, reps: base.reps, sec: base.sec, fait: false };
+            const base = v ? { kg: v.kg, reps: v.reps, sec: v.sec, lest: v.lest } : p;
+            return { prevu: { ...p }, kg: base.kg, reps: base.reps, sec: base.sec, lest: base.lest || 0, fait: false };
           }),
         };
       }),

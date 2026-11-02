@@ -21,7 +21,7 @@ function seriesModele(e) {
 }
 
 function exoModele(e, prefixe) {
-  const mesure = e.mesure !== 'charge' ? ` (${MESURES[e.mesure].toLowerCase()})` : '';
+  const mesure = e.mesure !== 'charge' ? ` (${MESURES[e.mesure].toLowerCase()}${e.mesure === 'pdc' && e.pct ? `, ${kg(e.pct)} % du poids` : ''})` : '';
   let t = `${prefixe}${e.nom}${e.uni ? ' — unilatéral, valeurs par côté' : ''}${mesure} : ${seriesModele(e)}`;
   if (e.note) t += `\n${' '.repeat(prefixe.length)}Consigne : ${e.note}`;
   return t;
