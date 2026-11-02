@@ -95,6 +95,7 @@ export function nouvelleSeance(programme, split, derniere) {
       id: uid('b'),
       src: b.id,
       repos: b.repos,
+      replie: true,
       exos: b.exos.map((e) => {
         const avant = passe.get(e.id);
         return {

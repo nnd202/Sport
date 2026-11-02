@@ -72,6 +72,10 @@ export function terminer(s, { ressenti, note }) {
   else if (!s.fin) s.fin = s.debut;
   s.ressenti = ressenti;
   s.note = note || '';
+  // La date prévue de ce split est consommée : la séance est faite.
+  const p = programme(s.programmeId);
+  const sp = p?.splits.find((x) => x.id === s.splitId);
+  if (sp?.prevu) { sp.prevu = null; if (p.plan?.splits) delete p.plan.splits[sp.id]; }
   s.chrono = null;
   etat.encours = null;
   enregistrer();
@@ -242,4 +246,19 @@ export function chronologie(p) {
     ...seancesDe(p.id).map((item) => ({ type: 'seance', item })),
     ...activitesDe(p).map((item) => ({ type: 'activite', item })),
   ].sort((a, b) => cle(a).localeCompare(cle(b)));
+}
+
+// --- Calendrier --------------------------------------------------------------------------
+
+export function plan(p) {
+  p.plan ||= { splits: {}, libres: [], bloques: [] };
+  // Le plan reprend les dates déjà appliquées.
+  for (const sp of p.splits) if (sp.prevu && !p.plan.splits[sp.id]) p.plan.splits[sp.id] = sp.prevu;
+  return p.plan;
+}
+
+export function appliquerPlan(p) {
+  const pl = plan(p);
+  for (const sp of p.splits) sp.prevu = pl.splits[sp.id] || null;
+  enregistrer();
 }

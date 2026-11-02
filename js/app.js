@@ -78,6 +78,8 @@ function route() {
   if (h === '#/programmes') return vueProgrammes();
   const mq = h.match(/^#\/p\/([^/]+)$/);
   if (mq && S.programme(mq[1])) return vuePrincipale(S.programme(mq[1]));
+  const mc = h.match(/^#\/calendrier\/([^/]+)$/);
+  if (mc && S.programme(mc[1])) return vueCalendrier(S.programme(mc[1]));
   const mt = h.match(/^#\/stats\/([^/]+)$/);
   if (mt && S.programme(mt[1])) return vueStats(S.programme(mt[1]));
   const mp = h.match(/^#\/programme\/([^/]+)$/);
@@ -215,6 +217,7 @@ function vuePrincipale(p) {
             <span class="split-texte">
               <strong>${esc(sp.nom)}</strong>
               <small>${der ? `${dateCourte(der.date)} · ${j === 0 ? "aujourd'hui" : `il y a ${j} j`}` : 'Pas encore fait'}</small>
+              ${sp.prevu ? `<small class="prevu-split">${I.calendrier}prévu ${dateCourte(sp.prevu)}${(() => { const e = -joursDepuis(sp.prevu); return e === 0 ? ", aujourd'hui" : e === 1 ? ', demain' : e > 1 ? `, dans ${e} j` : `, il y a ${-e} j`; })()}</small>` : ''}
             </span>
             ${actif ? `<button class="btn btn-petit" data-action="ouvrir" data-split="${sp.id}">Ouvrir</button>` : ''}
           </li>`;
@@ -413,6 +416,120 @@ function fenetreDate(s, apres) {
     S.dater(s, fd.get('date'), fd.get('debut') || null, fd.get('fin') || null);
     fermer(); apres();
   });
+}
+
+// --- Calendrier de planification -------------------------------------------------------
+
+let calMois = null;   // « AAAA-MM » affiché
+let calMode = null;   // id de split, 'libre', 'bloquer' ou null
+
+const ajouterJours = (iso, n) => { const d = new Date(`${iso}T12:00:00`); d.setDate(d.getDate() + n); return aujourdhui(d); };
+const ecartJours = (a, b) => Math.round((new Date(`${b}T12:00:00`) - new Date(`${a}T12:00:00`)) / 864e5);
+
+function vueCalendrier(p) {
+  flottant.innerHTML = '';
+  const pl = S.plan(p);
+  const auj = aujourdhui();
+  calMois ||= auj.slice(0, 7);
+  const [an, mo] = calMois.split('-').map(Number);
+  const premier = `${calMois}-01`;
+  const decalage = (new Date(`${premier}T12:00:00`).getDay() + 6) % 7; // lundi = 0
+  const nbJours = new Date(an, mo, 0).getDate();
+  const debutGrille = ajouterJours(premier, -decalage);
+  const nbCases = Math.ceil((decalage + nbJours) / 7) * 7;
+
+  // Contenu par jour
+  const parJour = {};
+  const ajouter = (date, html) => { (parJour[date] ||= []).push(html); };
+  for (const s of S.seancesDe(p.id)) ajouter(s.date, `<span class="cal-item fait" style="--c:${s.couleur}">${esc(s.nom)}</span>`);
+  for (const a of S.activitesDe(p)) ajouter(a.date, `<span class="cal-item activite">${esc(a.nom)}</span>`);
+  for (const sp of p.splits) {
+    const date = pl.splits[sp.id];
+    if (!date) continue;
+    const der = S.derniereDuSplit(p.id, sp.id);
+    const j = der ? ecartJours(der.date, date) : null;
+    ajouter(date, `<span class="cal-item prevu" style="--c:${sp.couleur}">${esc(sp.nom)}${j != null ? `<em>${j} j</em>` : ''}</span>`);
+  }
+  for (const l of pl.libres) ajouter(l.date, `<span class="cal-item prevu libre">${esc(l.nom)}</span>`);
+
+  const cases = Array.from({ length: nbCases }, (_, i) => {
+    const date = ajouterJours(debutGrille, i);
+    const horsMois = date.slice(0, 7) !== calMois;
+    const cls = [horsMois && 'hors', date === auj && 'auj', date < auj && 'passe', pl.bloques.includes(date) && 'bloque'].filter(Boolean).join(' ');
+    return `<button class="cal-jour ${cls}" data-action="cal-jour" data-date="${date}">
+      <span class="cal-num">${Number(date.slice(8))}</span>${(parJour[date] || []).join('')}</button>`;
+  }).join('');
+
+  const nomMois = new Date(an, mo - 1, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  const modeNom = calMode === 'libre' ? 'une séance libre' : calMode === 'bloquer' ? 'un jour bloqué' : esc(p.splits.find((x) => x.id === calMode)?.nom || '');
+  const modifie = p.splits.some((sp) => (pl.splits[sp.id] || null) !== (sp.prevu || null));
+
+  app.innerHTML = `
+    <header class="bandeau-tete">
+      <div class="bandeau-ligne">
+        <button class="btn-icone sur-couleur" data-action="ouvrir-programme" data-id="${p.id}" aria-label="Retour au programme">${I.retour}</button>
+        <div class="bandeau-titre"><small>${esc(p.nom)}</small><h1>Calendrier</h1></div>
+      </div>
+    </header>
+
+    <p class="titre-choix">Placer</p>
+    <div class="cal-outils">
+      ${p.splits.map((sp) => `<button class="cal-outil ${calMode === sp.id ? 'actif' : ''}" data-action="cal-mode" data-mode="${sp.id}" style="--c:${sp.couleur}">
+        <i></i>${esc(sp.nom)}<small>${pl.splits[sp.id] ? dateCourte(pl.splits[sp.id]) : '—'}</small></button>`).join('')}
+      <button class="cal-outil autre ${calMode === 'libre' ? 'actif' : ''}" data-action="cal-mode" data-mode="libre"><i class="pointille"></i>Séance libre</button>
+      <button class="cal-outil autre ${calMode === 'bloquer' ? 'actif' : ''}" data-action="cal-mode" data-mode="bloquer"><i class="hachure"></i>Bloquer un jour</button>
+    </div>
+    <p class="aide cal-aide">${calMode ? `Touche un jour pour placer ${modeNom}. Retouche-le pour l'enlever.` : 'Choisis ce que tu veux placer, puis touche un jour.'}</p>
+
+    <div class="cal">
+      <div class="cal-tete">
+        <button class="btn-icone" data-action="cal-mois" data-pas="-1" aria-label="Mois précédent">${I.retour}</button>
+        <strong>${nomMois}</strong>
+        <button class="btn-icone" data-action="cal-mois" data-pas="1" aria-label="Mois suivant">${I.droite}</button>
+      </div>
+      <div class="cal-semaine">${['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'].map((j) => `<span>${j}</span>`).join('')}</div>
+      <div class="cal-grille">${cases}</div>
+    </div>
+
+    <button class="btn btn-principal btn-large" data-action="cal-appliquer" data-id="${p.id}" ${modifie ? '' : 'data-rien="1"'}>Appliquer les dates aux splits à venir</button>
+    <p class="aide centre">Les dates appliquées s'affichent dans tes splits. Elles restent indicatives : tu ouvres le split que tu veux, quand tu veux.</p>`;
+}
+
+function calToucherJour(p, date) {
+  const pl = S.plan(p);
+  const auj = aujourdhui();
+  if (!calMode) {
+    const libre = pl.libres.find((l) => l.date === date);
+    if (libre) return fenetreLibre(p, libre);
+    return toast('Choisis d\'abord quoi placer');
+  }
+  if (date < auj) return toast('On ne planifie que les jours à venir');
+  if (calMode === 'bloquer') {
+    pl.bloques = pl.bloques.includes(date) ? pl.bloques.filter((d) => d !== date) : [...pl.bloques, date];
+  } else if (calMode === 'libre') {
+    const deja = pl.libres.find((l) => l.date === date);
+    if (deja) pl.libres = pl.libres.filter((l) => l !== deja);
+    else pl.libres.push({ id: uid('l'), date, nom: 'Séance libre' });
+  } else {
+    if (pl.bloques.includes(date)) return toast('Ce jour est bloqué');
+    pl.splits[calMode] = pl.splits[calMode] === date ? null : date;
+    if (!pl.splits[calMode]) delete pl.splits[calMode];
+  }
+  S.enregistrer();
+  vueCalendrier(p);
+}
+
+function fenetreLibre(p, libre) {
+  fenetreNom('Séance libre', libre.nom, `Prévue le ${dateCourte(libre.date)}. Donne-lui son vrai nom (Rando, Vélo…).`, (n) => {
+    libre.nom = majuscule(n); S.enregistrer(); fermer(); vueCalendrier(p);
+  });
+  const f = couche.querySelector('form');
+  f.insertAdjacentHTML('beforeend', '<div class="actions-sec"><button type="button" class="lien danger" data-f="retirer">Retirer du calendrier</button></div>');
+  f.querySelector('[data-f="retirer"]').onclick = () => {
+    const pl = S.plan(p);
+    pl.libres = pl.libres.filter((l) => l !== libre);
+    S.enregistrer(); fermer(); vueCalendrier(p);
+  };
 }
 
 // --- Configuration : programmes ---------------------------------------------------
@@ -1328,7 +1445,25 @@ app.addEventListener('click', (ev) => {
     case 'ouvrir-programme': return aller(`#/p/${d.id}`);
     case 'configurer': retourConfig = 'programme'; return aller(`#/programme/${d.id}`);
     case 'stats': return aller(`#/stats/${d.id}`);
-    case 'calendrier': return toast('Le calendrier arrive à la prochaine étape');
+    case 'calendrier': calMode = null; calMois = null; return aller(`#/calendrier/${d.id}`);
+    case 'cal-mode': {
+      calMode = calMode === d.mode ? null : d.mode;
+      return vueCalendrier(S.programme(location.hash.split('/')[2]));
+    }
+    case 'cal-mois': {
+      const [a, m] = calMois.split('-').map(Number);
+      const n = new Date(a, m - 1 + Number(d.pas), 1);
+      calMois = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`;
+      return vueCalendrier(S.programme(location.hash.split('/')[2]));
+    }
+    case 'cal-jour': return calToucherJour(S.programme(location.hash.split('/')[2]), d.date);
+    case 'cal-appliquer': {
+      const pr = S.programme(d.id);
+      S.appliquerPlan(pr);
+      calMode = null;
+      toast('Dates appliquées aux splits');
+      return aller(`#/p/${pr.id}`);
+    }
     case 'mensurations': return toast('Les mensurations arrivent à l\'étape 5');
     case 'programme': retourConfig = d.depuis === 'gestion' ? 'gestion' : retourConfig; return aller(`#/programme/${d.id}`);
     case 'split': return aller(`#/split/${d.programme}/${d.split}`);
