@@ -6,7 +6,12 @@ export const MESURES = {
   charge: 'Charge × reps',
   pdc: 'Poids du corps',
   temps: 'Temps',
+  cardio: 'Cardio',
+  echauffement: 'Échauffement',
 };
+
+/** Échauffement : une simple coche, sans valeurs. */
+export const estEchauffement = (e) => e.mesure === 'echauffement';
 
 export function aujourdhui(d = new Date()) {
   const z = (n) => String(n).padStart(2, '0');
@@ -36,6 +41,8 @@ export const kg = (n) => (Math.round(n * 100) / 100).toLocaleString('fr-FR');
 /** Texte d'une série : « 45 kg × 12 », « 45 s », « 10 reps », « 10 reps +10 kg ». */
 export function texteSerie(exo, s) {
   if (exo.mesure === 'temps') return `${s.sec ?? 0} s`;
+  if (exo.mesure === 'cardio') return `${kg(s.min ?? 0)} min`;
+  if (exo.mesure === 'echauffement') return 'fait';
   if (exo.mesure === 'pdc') return `${s.reps ?? 0} reps${s.lest ? ` +${kg(s.lest)} kg` : ''}`;
   return `${kg(s.kg ?? 0)} kg × ${s.reps ?? 0}`;
 }
@@ -61,6 +68,8 @@ export function volumeSerie(exo, s, date) {
   if (!s.fait) return 0;
   const cotes = exo.uni ? 2 : 1;
   if (exo.mesure === 'temps') return (s.sec || 0) * cotes;
+  if (exo.mesure === 'cardio') return s.min || 0;
+  if (exo.mesure === 'echauffement') return 0;
   const c = chargeRep(exo, s, date);
   if (c == null) return (s.reps || 0) * cotes;
   return c * (s.reps || 0) * cotes;
@@ -132,8 +141,8 @@ export function nouvelleSeance(programme, split, derniere) {
           note: '',
           series: e.series.map((p, i) => {
             const v = avant?.series[i] ?? avant?.series[avant.series.length - 1];
-            const base = v ? { kg: v.kg, reps: v.reps, sec: v.sec, lest: v.lest } : p;
-            return { prevu: { ...p }, kg: base.kg, reps: base.reps, sec: base.sec, lest: base.lest || 0, fait: false };
+            const base = v ? { kg: v.kg, reps: v.reps, sec: v.sec, lest: v.lest, min: v.min } : p;
+            return { prevu: { ...p }, kg: base.kg, reps: base.reps, sec: base.sec, min: base.min, lest: base.lest || 0, fait: false };
           }),
         };
       }),

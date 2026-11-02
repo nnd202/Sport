@@ -8,7 +8,7 @@ export function volumeExo(e, date) {
   return e.series.reduce((a, s) => a + volumeSerie(e, s, date), 0);
 }
 
-export const uniteExo = (e, date) => (enKg(e, date) ? 'kg' : e.mesure === 'temps' ? 's' : 'reps');
+export const uniteExo = (e, date) => (enKg(e, date) ? 'kg' : e.mesure === 'temps' ? 's' : e.mesure === 'cardio' ? 'min' : 'reps');
 
 const chargeMax = (e, date) => (enKg(e, date) ? Math.max(0, ...e.series.filter((s) => s.fait).map((s) => chargeRep(e, s, date) || 0)) : null);
 const faites = (e) => e.series.filter((s) => s.fait);
@@ -23,6 +23,7 @@ export function couloirs(p, seances) {
   const ordre = [];
   // Ordre et noms : ceux du modèle actuel d'abord.
   for (const sp of p.splits) for (const b of sp.blocs) for (const e of b.exos) {
+    if (e.mesure === 'echauffement') continue;
     const c = { id: e.id, nom: e.nom, mesure: e.mesure, splitId: sp.id, points: [] };
     parId.set(e.id, c);
     ordre.push(c);
@@ -31,7 +32,7 @@ export function couloirs(p, seances) {
   for (const s of seances) {
     const tous = s.blocs.flatMap((b) => b.exos);
     for (const e of tous) {
-      if (e.remplacePar) continue;
+      if (e.remplacePar || e.mesure === 'echauffement') continue;
       if (e.ponctuel) {
         if (faites(e).length) ponctuels.push({ nom: e.nom, date: s.date, seanceId: s.id, volume: volumeExo(e, s.date), mesure: e.mesure, unite: uniteExo(e, s.date), texte: faites(e).map((x) => texteSerie(e, x)).join(', ') });
         continue;
@@ -62,7 +63,7 @@ export function couloirs(p, seances) {
     }
   }
   for (const c of ordre) {
-    c.unite = c.points[c.points.length - 1]?.unite || (c.mesure === 'temps' ? 's' : c.mesure === 'pdc' ? 'reps' : 'kg');
+    c.unite = c.points[c.points.length - 1]?.unite || (c.mesure === 'temps' ? 's' : c.mesure === 'cardio' ? 'min' : c.mesure === 'pdc' ? 'reps' : 'kg');
     const pts = c.points.filter((x) => !x.remplace && x.unite === c.unite);
     c.debut = pts[0]?.volume ?? null;
     c.fin = pts[pts.length - 1]?.volume ?? null;

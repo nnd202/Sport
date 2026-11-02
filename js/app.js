@@ -245,6 +245,7 @@ function vuePrincipale(p) {
 
 function fmtVolume(v, unite) {
   if (unite === 's' || unite === 'temps') return duree(v);
+  if (unite === 'min' || unite === 'cardio') return `${kg(Math.round(v * 10) / 10)} min`;
   if (unite === 'reps' || unite === 'pdc') return `${Math.round(v)} reps`;
   return `${kg(Math.round(v))} kg`;
 }
@@ -353,7 +354,7 @@ function fenetreCouloir(c) {
   const pts = c.points;
   ouvrirFenetre(`
     <h2>${esc(c.nom)}</h2>
-    <p class="aide">${c.unite === 'kg' ? `Tonnage${c.mesure === 'pdc' ? ' (poids du corps × pourcentage + lest)' : ''}` : c.unite === 'reps' ? 'Répétitions totales' : 'Durée totale'} par séance${c.evolution != null ? ` · <b>${pctTexte(c.evolution)}</b> entre la première et la dernière` : ''}.</p>
+    <p class="aide">${c.unite === 'min' ? 'Minutes de cardio' : c.unite === 'kg' ? `Tonnage${c.mesure === 'pdc' ? ' (poids du corps × pourcentage + lest)' : ''}` : c.unite === 'reps' ? 'Répétitions totales' : 'Durée totale'} par séance${c.evolution != null ? ` · <b>${pctTexte(c.evolution)}</b> entre la première et la dernière` : ''}.</p>
     ${pts.length ? G.courbe({ points: pts.map((x) => ({ etiquette: dateCourte(x.date), y: x.volume, creux: !!x.remplace, tip: `${fmtVolume(x.volume, x.unite)}\n${dateCourte(x.date)}${x.remplace ? ` · remplacé par ${x.remplace}` : ''}` })), format: c.unite === 's' ? (v) => duree(v) : fmtCourt, temps: c.unite === 's' }) : ''}
     <table class="table-couloir">
       <thead><tr><th>Date</th><th>Séries faites</th><th>Volume</th></tr></thead>
@@ -953,6 +954,7 @@ function fenetreBascule(p) {
 // --- Configuration : éditeur de split -----------------------------------------------
 
 function texteModele(e) {
+  if (e.mesure === 'echauffement') return 'à cocher';
   if (!e.series.length) return 'aucune série';
   const t = e.series.map((x) => texteSerie(e, x));
   const pareil = t.every((x) => x === t[0]);
@@ -1001,6 +1003,8 @@ function vueSplit(p, sp) {
 
 function valeursParDefaut(mesure) {
   if (mesure === 'temps') return { sec: 30 };
+  if (mesure === 'cardio') return { min: 20 };
+  if (mesure === 'echauffement') return {};
   if (mesure === 'pdc') return { reps: 10 };
   return { kg: 20, reps: 10 };
 }
@@ -1023,11 +1027,13 @@ function champPct(e) {
 }
 
 function lignesSeries(mesure, series) {
+  if (mesure === 'echauffement') return '';
   return series.map((x, i) => `
     <div class="ligne-modele" data-ligne>
       <span class="serie-num">${i + 1}</span>
       ${mesure === 'charge' ? `<label class="mini-champ"><input name="kg" inputmode="decimal" value="${String(x.kg ?? 0).replace('.', ',')}"><span>kg</span></label>` : ''}
-      ${mesure === 'temps' ? `<label class="mini-champ"><input name="sec" inputmode="numeric" value="${x.sec ?? 30}"><span>s</span></label>`
+      ${mesure === 'cardio' ? `<label class="mini-champ"><input name="min" inputmode="decimal" value="${String(x.min ?? 20).replace('.', ',')}"><span>min</span></label>`
+        : mesure === 'temps' ? `<label class="mini-champ"><input name="sec" inputmode="numeric" value="${x.sec ?? 30}"><span>s</span></label>`
         : `<label class="mini-champ"><input name="reps" inputmode="numeric" value="${x.reps ?? 10}"><span>reps</span></label>`}
       ${mesure === 'pdc' ? `<label class="mini-champ lest"><span>+</span><input name="lest" inputmode="decimal" value="${x.lest ? String(x.lest).replace('.', ',') : ''}" placeholder="0"><span>kg</span></label>` : ''}
       <button type="button" class="btn-icone petit" data-f="retirer-ligne" aria-label="Retirer la série">${I.croix}</button>
@@ -1035,9 +1041,11 @@ function lignesSeries(mesure, series) {
 }
 
 function lireLignes(form, mesure) {
+  if (mesure === 'echauffement') return [{}];
   return [...form.querySelectorAll('[data-ligne]')].map((l) => {
     const v = (n) => l.querySelector(`[name="${n}"]`)?.value;
     if (mesure === 'temps') return { sec: Math.max(0, Math.round(num(v('sec')))) };
+    if (mesure === 'cardio') return { min: Math.max(0, num(v('min'))) };
     if (mesure === 'pdc') return { reps: Math.max(0, Math.round(num(v('reps')))), lest: Math.max(0, num(v('lest') || 0)) };
     return { kg: Math.max(0, num(v('kg'))), reps: Math.max(0, Math.round(num(v('reps')))) };
   });
@@ -1054,9 +1062,12 @@ function fenetreModeleExo(p, sp, bloc, exo) {
       ${choixMesure(e.mesure)}
       <label class="interrupteur"><input type="checkbox" name="uni" ${e.uni ? 'checked' : ''}><span></span>Unilatéral (valeurs par côté)</label>
       <div data-pct ${e.mesure === 'pdc' ? '' : 'hidden'}>${champPct(e)}</div>
-      <p class="titre-choix">Séries prévues</p>
-      <div data-lignes>${lignesSeries(e.mesure, e.series)}</div>
-      <button type="button" class="lien" data-f="ajouter-ligne">${I.plus} série</button>
+      <div data-series ${e.mesure === 'echauffement' ? 'hidden' : ''}>
+        <p class="titre-choix">${e.mesure === 'cardio' ? 'Durée prévue (plusieurs lignes pour un fractionné)' : 'Séries prévues'}</p>
+        <div data-lignes>${lignesSeries(e.mesure, e.series)}</div>
+        <button type="button" class="lien" data-f="ajouter-ligne">${I.plus} ${e.mesure === 'cardio' ? 'segment' : 'série'}</button>
+      </div>
+      <p class="aide" data-aide-echauffement ${e.mesure === 'echauffement' ? '' : 'hidden'}>Un échauffement se coche simplement en séance : pas de séries, pas de repos, pas de stats.</p>
       <label class="champ"><span>Consigne</span><textarea name="note" rows="2" placeholder="Tempo 3-1-1, bras opposé en tension, demi-reps en fin de série…">${esc(e.note)}</textarea></label>
       <button class="btn btn-principal btn-large">Enregistrer</button>
       ${nouveau ? '' : '<div class="actions-sec"><button type="button" class="lien danger" data-f="supprimer">Supprimer cet exercice</button></div>'}
@@ -1072,7 +1083,7 @@ function fenetreModeleExo(p, sp, bloc, exo) {
     if (nouveau) {
       const ex = { id: uid('e'), ...donnees };
       if (bloc) bloc.exos.push(ex);
-      else sp.blocs.push({ id: uid('b'), repos: 90, exos: [ex] });
+      else sp.blocs.push({ id: uid('b'), repos: ['cardio', 'echauffement'].includes(ex.mesure) ? 0 : 90, exos: [ex] });
     } else Object.assign(exo, donnees);
     S.enregistrer(); fermer(); vueSplit(p, sp);
   });
@@ -1093,9 +1104,12 @@ function fenetreModeleExo(p, sp, bloc, exo) {
   form.elements.mesure.addEventListener('change', () => {
     const mesure = form.elements.mesure.value;
     form.querySelector('[data-pct]').hidden = mesure !== 'pdc';
+    form.querySelector('[data-series]').hidden = mesure === 'echauffement';
+    form.querySelector('[data-aide-echauffement]').hidden = mesure !== 'echauffement';
+    form.querySelector('[data-series] .titre-choix').textContent = mesure === 'cardio' ? 'Durée prévue (plusieurs lignes pour un fractionné)' : 'Séries prévues';
     if (mesure === 'pdc' && !form.elements.pct.value) form.elements.pct.value = pctSuggere(form.elements.nom.value) ?? '';
     const n = zone.querySelectorAll('[data-ligne]').length || 3;
-    zone.innerHTML = lignesSeries(mesure, Array.from({ length: n }, () => valeursParDefaut(mesure)));
+    zone.innerHTML = lignesSeries(mesure, Array.from({ length: mesure === 'cardio' ? 1 : n }, () => valeursParDefaut(mesure)));
   });
   const sup = form.querySelector('[data-f="supprimer"]');
   if (sup) sup.onclick = () => {
@@ -1135,6 +1149,8 @@ function blocFini(b) { return actifs(b).every((e) => e.series.length && e.series
 function valeurs(e, s) {
   const u = e.uni ? '<i>/côté</i>' : '';
   if (e.mesure === 'temps') return `<span class="v"><b>${s.sec ?? 0}</b> s${u}</span>`;
+  if (e.mesure === 'cardio') return `<span class="v"><b>${kg(s.min ?? 0)}</b> min</span>`;
+  if (e.mesure === 'echauffement') return `<span class="v">${s.fait ? 'Fait' : 'À faire'}</span>`;
   if (e.mesure === 'pdc') return `<span class="v"><b>${s.reps ?? 0}</b> reps${u}</span>${s.lest ? `<span class="v"><b>+${kg(s.lest)}</b> kg</span>` : ''}`;
   return `<span class="v v-kg"><b>${kg(s.kg ?? 0)}</b> kg</span><span class="v"><b>${s.reps ?? 0}</b> reps${u}</span>`;
 }
@@ -1159,7 +1175,7 @@ function ancreCourante(s) {
   let meilleure = null;
   for (const b of s.blocs) {
     if (b.replie) continue;
-    for (const e of actifs(b)) e.series.forEach((x, i) => {
+    for (const e of actifs(b)) if (!['echauffement', 'cardio'].includes(e.mesure)) e.series.forEach((x, i) => {
       if (x.fait && x.faitA && (!meilleure || x.faitA > meilleure.t)) meilleure = { bloc: b.id, exo: e.id, i, t: x.faitA };
     });
   }
@@ -1223,7 +1239,7 @@ function carteBloc(s, b) {
       ${poignee}
       <div class="bloc-titres">${titres}</div>
       <button class="bloc-plier" data-action="plier" data-bloc="${b.id}" aria-label="${b.replie ? 'Déplier' : 'Replier'}" aria-expanded="${!b.replie}">
-        ${b.replie ? `<span class="bloc-resume ${fini ? 'fini' : ''}">${fini ? I.check : ''}${resumeBloc(b)}</span>` : `<span class="bloc-repos">${I.chrono}${duree(b.repos)}</span>`}
+        ${b.replie ? `<span class="bloc-resume ${fini ? 'fini' : ''}">${fini ? I.check : ''}${resumeBloc(b)}</span>` : (b.repos ? `<span class="bloc-repos">${I.chrono}${duree(b.repos)}</span>` : '')}
         <span class="chevron">${b.replie ? I.bas : I.haut}</span>
       </button>
     </div>`;
@@ -1232,16 +1248,16 @@ function carteBloc(s, b) {
 
   const series = multi
     ? Array.from({ length: nbTours(b) }, (_, t) => `<div class="tour">${exos.map((e, i) => ligneSerie(b, e, t, i === 0 ? t + 1 : '')).join('')}</div>`).join('')
-    : `<div class="tour">${exos[0].series.map((_, i) => ligneSerie(b, exos[0], i, i + 1)).join('')}</div>`;
+    : `<div class="tour">${exos[0].series.map((_, i) => ligneSerie(b, exos[0], i, exos[0].mesure === 'echauffement' ? '' : i + 1)).join('')}</div>`;
 
   return `
     <article class="bloc ${multi ? 'multi' : ''}" data-id="${b.id}">
       ${tete}
       <div class="series">${series}</div>
-      <div class="bloc-pied">
-        <button data-action="retirer-serie" data-bloc="${b.id}">${I.moins} série</button>
-        <button data-action="ajouter-serie" data-bloc="${b.id}">${I.plus} série</button>
-      </div>
+      ${exos.every((e) => e.mesure === 'echauffement') ? '' : `<div class="bloc-pied">
+        <button data-action="retirer-serie" data-bloc="${b.id}">${I.moins} ${exos.every((e) => e.mesure === 'cardio') ? 'segment' : 'série'}</button>
+        <button data-action="ajouter-serie" data-bloc="${b.id}">${I.plus} ${exos.every((e) => e.mesure === 'cardio') ? 'segment' : 'série'}</button>
+      </div>`}
     </article>`;
 }
 
@@ -1474,12 +1490,16 @@ function stepper(nom, libelle, valeur, pas, unite) {
 
 function champsMesure(mesure, v) {
   if (mesure === 'temps') return stepper('sec', 'Durée', v.sec, 5, 's');
+  if (mesure === 'cardio') return stepper('min', 'Durée', v.min ?? 20, 1, 'min');
+  if (mesure === 'echauffement') return '';
   if (mesure === 'pdc') return `<div class="deux">${stepper('reps', 'Répétitions', v.reps, 1, 'reps')}${stepper('lest', 'Lest', v.lest || 0, 2.5, 'kg')}</div>`;
   return `<div class="deux">${stepper('kg', 'Charge', v.kg, 2.5, 'kg')}${stepper('reps', 'Répétitions', v.reps, 1, 'reps')}</div>`;
 }
 
 function lireMesure(fd, mesure) {
   if (mesure === 'temps') return { sec: Math.max(0, Math.round(num(fd.get('sec')))) };
+  if (mesure === 'cardio') return { min: Math.max(0, num(fd.get('min'))) };
+  if (mesure === 'echauffement') return {};
   if (mesure === 'pdc') return { reps: Math.max(0, Math.round(num(fd.get('reps')))), lest: fd.has('lest') ? Math.max(0, num(fd.get('lest'))) : 0 };
   return { kg: Math.max(0, num(fd.get('kg'))), reps: Math.max(0, Math.round(num(fd.get('reps')))) };
 }
@@ -1568,7 +1588,7 @@ function fenetreExo(s, blocId, exoId) {
       ${e.remplace || e.ponctuel ? '<div class="actions-sec"><button type="button" class="lien danger" data-f="retirer">Retirer cet exercice</button></div>' : ''}
     </form>`, (fd) => {
     const mesure = fd.get('mesure');
-    if (mesure !== e.mesure) e.series.forEach((x) => { if (mesure === 'temps' && x.sec == null) x.sec = 30; if (mesure !== 'temps' && x.reps == null) x.reps = 10; if (mesure === 'charge' && x.kg == null) x.kg = 0; });
+    if (mesure !== e.mesure) e.series.forEach((x) => { if (mesure === 'cardio' && x.min == null) x.min = 20; if (mesure === 'temps' && x.sec == null) x.sec = 30; if (mesure !== 'temps' && x.reps == null) x.reps = 10; if (mesure === 'charge' && x.kg == null) x.kg = 0; });
     const pctTxt = String(fd.get('pct') || '').trim();
     Object.assign(e, { nom: majuscule(fd.get('nom')) || e.nom, mesure, uni: fd.get('uni') === 'on', note: fd.get('note').trim(), pct: mesure === 'pdc' && pctTxt ? num(pctTxt) : null });
     S.enregistrer(); fermer(); vueSeance();
@@ -1606,7 +1626,7 @@ function fenetreAjout(s) {
     const mode = fd.get('mode');
     const mesure = fd.get('mesure');
     const val = lireMesure(fd, mesure);
-    const nb = Math.max(1, Math.round(num(fd.get('nb'))));
+    const nb = mesure === 'echauffement' ? 1 : Math.max(1, Math.round(num(fd.get('nb'))));
     const exo = {
       id: uid('e'), src: null, nom: majuscule(fd.get('nom')), mesure, uni: fd.get('uni') === 'on', note: '', pct: mesure === 'pdc' ? pctSuggere(fd.get('nom')) : null,
       series: Array.from({ length: nb }, () => ({ prevu: null, ...val, fait: true, faitA: Date.now() })),
@@ -1629,7 +1649,7 @@ function fenetreAjout(s) {
   const f = couche.querySelector('form');
   f.querySelectorAll('[data-mode]').forEach((btn) => btn.addEventListener('click', () => { f.elements.mode.value = btn.dataset.mode; }));
   f.elements.mesure.addEventListener('change', () => {
-    f.querySelector('[data-mesure-champs]').innerHTML = champsMesure(f.elements.mesure.value, { kg: 20, reps: 10, sec: 30 });
+    f.querySelector('[data-mesure-champs]').innerHTML = champsMesure(f.elements.mesure.value, { kg: 20, reps: 10, sec: 30, min: 20 });
   });
   setTimeout(() => f.elements.nom.focus(), 60);
 }
