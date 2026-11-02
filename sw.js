@@ -1,6 +1,6 @@
 // Réseau d'abord, cache en secours. Tout nouveau fichier doit être ajouté à CORE
 // (node tools/check.mjs le contrôle).
-const CACHE = 'sport-v12';
+const CACHE = 'sport-v13';
 const CORE = [
   './',
   'index.html',
@@ -11,6 +11,8 @@ const CORE = [
   'js/calc.js',
   'js/demo.js',
   'js/export.js',
+  'js/stats.js',
+  'js/graph.js',
   'icons/icon.svg',
   'icons/icon-192.png',
   'icons/icon-512.png',

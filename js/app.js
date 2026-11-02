@@ -3,6 +3,8 @@ import * as S from './store.js';
 import { uid, duree, dureeSeance, dateCourte, kg, texteSerie, bilan, MESURES, aujourdhui } from './calc.js';
 import { COULEURS_SPLITS } from './demo.js';
 import * as X from './export.js';
+import * as ST from './stats.js';
+import * as G from './graph.js';
 
 const majuscule = (t) => { t = String(t || '').trim(); return t.charAt(0).toUpperCase() + t.slice(1); };
 
@@ -237,23 +239,127 @@ function vuePrincipale(p) {
   }
 }
 
+function fmtVolume(v, mesure) {
+  if (mesure === 'temps') return duree(v);
+  if (mesure === 'pdc') return `${Math.round(v)} reps`;
+  return `${kg(Math.round(v))} kg`;
+}
+const fmtCourt = (v) => kg(Math.round(v));
+const pctTexte = (x) => `${x > 0 ? '+' : ''}${Math.round(x * 100)} %`;
+
 function vueStats(p) {
   flottant.innerHTML = '';
   const b = S.bilanProgramme(p);
+  const seances = S.seancesDe(p.id);
+  if (!p.debut || !seances.length) {
+    app.innerHTML = `${teteStats(p)}<p class="vide">Les stats apparaîtront dès la première séance terminée.</p>`;
+    return;
+  }
+  const { couloirs, ponctuels } = ST.couloirs(p, seances);
+  const tonnages = ST.tonnageParSplit(p, seances).filter((x) => x.points.length);
+  const repos = ST.reposParSeance(seances);
+  const rp = ST.ressentiPerformance(seances);
+  derniersCouloirs = couloirs;
+
+  const carteTonnage = ({ split, points }) => `
+    <div class="carte-graphe">
+      <p class="graphe-titre"><i style="--c:${split.couleur}"></i>${esc(split.nom)} <small>tonnage par séance</small></p>
+      ${G.courbe({ points: points.map((x) => ({ etiquette: dateCourte(x.date), y: x.valeur, tip: `${kg(Math.round(x.valeur))} kg\n${dateCourte(x.date)}` })), format: fmtCourt })}
+    </div>`;
+
+  const ligneCouloir = (c) => {
+    const pts = c.points;
+    const evo = c.evolution;
+    return `<li><button class="ligne-couloir" data-action="couloir" data-id="${c.id}">
+      <span class="lc-nom"><strong>${esc(c.nom)}</strong><small>${pts.length ? `${pts.length} séance${pts.length > 1 ? 's' : ''}` : 'pas encore fait'}${c.retire ? ' · retiré du modèle' : ''}</small></span>
+      ${pts.length ? G.mini(pts.map((x) => x.volume), pts.map((x, i) => (x.remplace ? i : -1)).filter((i) => i >= 0)) : ''}
+      <span class="lc-val">${pts.length ? `<b>${fmtVolume(pts[pts.length - 1].volume, pts[pts.length - 1].mesure)}</b><small class="${evo > 0 ? 'hausse' : evo < 0 ? 'baisse' : ''}">${evo != null ? pctTexte(evo) : '–'}</small>` : ''}</span>
+    </button></li>`;
+  };
+
+  const ecartRepos = repos.length ? repos.reduce((a, r) => a + r.reel - r.prevu, 0) / repos.length : 0;
+
   app.innerHTML = `
-    <header class="bandeau-tete">
+    ${teteStats(p)}
+    <h3 class="titre-section">Bilan${p.statut === 'en-cours' ? ' à ce jour' : ''}</h3>
+    ${blocBilan(b)}
+    <button class="btn btn-large" data-action="export-donnees" data-id="${p.id}">${I.partage} Exporter les données</button>
+
+    <h3 class="titre-section">Tonnage des séances</h3>
+    ${tonnages.map(carteTonnage).join('')}
+
+    <h3 class="titre-section">Exercices</h3>
+    <p class="aide stats-aide">Volume de chaque exercice par séance : tonnage, ou reps et durée selon la mesure. Un rond vide marque une séance où il a été remplacé. Touche un exercice pour le détail.</p>
+    ${p.splits.map((sp) => {
+      const l = couloirs.filter((c) => c.splitId === sp.id);
+      return l.length ? `<p class="sous-titre"><i style="--c:${sp.couleur}"></i>${esc(sp.nom)}</p><ul class="couloirs">${l.map(ligneCouloir).join('')}</ul>` : '';
+    }).join('')}
+    ${couloirs.some((c) => !p.splits.some((sp) => sp.id === c.splitId)) ? `<ul class="couloirs">${couloirs.filter((c) => !p.splits.some((sp) => sp.id === c.splitId)).map(ligneCouloir).join('')}</ul>` : ''}
+    ${ponctuels.length ? `<p class="sous-titre">Ponctuels <small>ajoutés « en plus » en séance</small></p>
+      <ul class="couloirs">${ponctuels.map((x) => `<li class="ligne-couloir statique"><span class="lc-nom"><strong>${esc(x.nom)}</strong><small>${dateCourte(x.date)} · ${esc(x.texte)}</small></span><span class="lc-val"><b>${fmtVolume(x.volume, x.mesure)}</b></span></li>`).join('')}</ul>` : ''}
+
+    <h3 class="titre-section">Repos</h3>
+    ${repos.length ? `
+      <div class="carte-graphe">
+        <p class="graphe-titre">Repos moyen par séance</p>
+        <div class="legende"><span><i class="cle accent"></i>réel</span><span><i class="cle gris"></i>prévu</span></div>
+        ${G.courbe({ points: repos.map((r) => ({ etiquette: dateCourte(r.date), y: r.reel, tip: `${duree(r.reel)} de repos moyen\nprévu ${duree(r.prevu)} · ${r.nom}, ${dateCourte(r.date)}` })), reference: repos.map((r) => r.prevu), format: (v) => duree(v), zero: true, temps: true })}
+        <p class="phrase">${Math.abs(ecartRepos) < 5 ? 'Tu tiens tes repos prévus.' : ecartRepos > 0 ? `En moyenne, tes repos dépassent le prévu de <b>${duree(ecartRepos)}</b>.` : `En moyenne, tes repos sont plus courts que prévu de <b>${duree(-ecartRepos)}</b>.`}</p>
+      </div>` : '<p class="vide">Utilise le chrono (ou saisis les repos dans une séance) pour voir tes temps de repos.</p>'}
+
+    <h3 class="titre-section">Ressenti et performance</h3>
+    ${rp.points.length >= 3 ? `
+      <div class="carte-graphe">
+        <p class="graphe-titre">Chaque séance <small>tonnage comparé à la moyenne de son split</small></p>
+        ${G.nuage({ points: rp.points.map((x) => ({ x: x.ressenti, y: x.perf, tip: `${pctTexte(x.perf - 1)} vs moyenne du split\n${x.nom}, ${dateCourte(x.date)} · ressenti ${x.ressenti}/10` })), format: (v) => `${Math.round(v * 100)} %` })}
+        <p class="phrase">${phraseRessenti(rp)}</p>
+      </div>` : '<p class="vide">Il faut au moins 3 séances avec un ressenti pour croiser ressenti et performance.</p>'}`;
+  window.scrollTo(0, 0);
+}
+
+function teteStats(p) {
+  return `<header class="bandeau-tete">
       <div class="bandeau-ligne">
         <button class="btn-icone sur-couleur" data-action="ouvrir-programme" data-id="${p.id}" aria-label="Retour au programme">${I.retour}</button>
         <div class="bandeau-titre"><small>${esc(p.nom)}</small><h1>Stats</h1></div>
       </div>
-    </header>
-    ${p.debut ? `
-      <h3 class="titre-section">Bilan${p.statut === 'en-cours' ? ' à ce jour' : ''}</h3>
-      ${blocBilan(b)}
-      <button class="btn btn-large" data-action="export-donnees" data-id="${p.id}">${I.partage} Exporter les données</button>
-      <p class="aide centre">Courbes par exercice, repos et ressenti : à venir (étape 4).</p>`
-    : '<p class="vide">Les stats apparaîtront dès la première séance.</p>'}`;
-  window.scrollTo(0, 0);
+    </header>`;
+}
+
+function phraseRessenti(rp) {
+  const f = (x) => x.toLocaleString('fr-FR', { maximumFractionDigits: 1 });
+  const morceaux = [];
+  if (rp.nbBonnes && rp.nbMoins) {
+    const ecart = rp.ressentiBonnes - rp.ressentiMoins;
+    morceaux.push(Math.abs(ecart) < 0.5
+      ? `Ton ressenti ne prédit pas ta performance : ${f(rp.ressentiBonnes)}/10 en moyenne sur tes meilleures séances, ${f(rp.ressentiMoins)}/10 sur les moins bonnes.`
+      : ecart < 0
+        ? `Tes meilleures séances ont un ressenti <b>plus bas</b> (${f(rp.ressentiBonnes)}/10) que les moins bonnes (${f(rp.ressentiMoins)}/10).`
+        : `Tes meilleures séances ont un ressenti plus haut (${f(rp.ressentiBonnes)}/10) que les moins bonnes (${f(rp.ressentiMoins)}/10).`);
+  }
+  if (rp.reposBas != null && rp.reposHauts != null) {
+    morceaux.push(`Les jours de ressenti bas (4 ou moins), ton repos moyen est de ${duree(rp.reposBas)}, contre ${duree(rp.reposHauts)} les bons jours (7 ou plus).`);
+  }
+  return morceaux.join(' ') || 'Pas encore assez de séances contrastées pour en tirer une tendance.';
+}
+
+let derniersCouloirs = [];
+
+function fenetreCouloir(c) {
+  const pts = c.points;
+  ouvrirFenetre(`
+    <h2>${esc(c.nom)}</h2>
+    <p class="aide">${ST.UNITES[c.mesure] === 'kg' ? 'Tonnage' : c.mesure === 'pdc' ? 'Répétitions totales' : 'Durée totale'} par séance${c.evolution != null ? ` · <b>${pctTexte(c.evolution)}</b> entre la première et la dernière` : ''}.</p>
+    ${pts.length ? G.courbe({ points: pts.map((x) => ({ etiquette: dateCourte(x.date), y: x.volume, creux: !!x.remplace, tip: `${fmtVolume(x.volume, x.mesure)}\n${dateCourte(x.date)}${x.remplace ? ` · remplacé par ${x.remplace}` : ''}` })), format: c.mesure === 'temps' ? (v) => duree(v) : fmtCourt, temps: c.mesure === 'temps' }) : ''}
+    <table class="table-couloir">
+      <thead><tr><th>Date</th><th>Séries faites</th><th>Volume</th></tr></thead>
+      <tbody>${pts.slice().reverse().map((x) => `<tr>
+        <td>${dateCourte(x.date)}</td>
+        <td>${esc(x.texte)}${x.nbSeries < x.nbPrevues ? ` <em>(${x.nbSeries}/${x.nbPrevues})</em>` : ''}${x.remplace ? `<br><em>remplacé par ${esc(x.remplace)}</em>` : ''}${x.changement ? `<br><em>forme modifiée${x.uni ? ' : unilatéral' : ''}</em>` : ''}</td>
+        <td>${fmtVolume(x.volume, x.mesure)}${x.chargeMax ? `<br><em>max ${kg(x.chargeMax)} kg</em>` : ''}</td></tr>`).join('')}</tbody>
+    </table>
+    <button class="btn btn-large" data-f="ok">Fermer</button>`);
+  couche.querySelector('[data-f="ok"]').onclick = fermer;
 }
 
 // Glisser-déposer aimanté (splits de l'accueil et blocs de la séance).
@@ -1479,6 +1585,7 @@ app.addEventListener('click', (ev) => {
     case 'ouvrir-programme': return aller(`#/p/${d.id}`);
     case 'configurer': retourConfig = 'programme'; return aller(`#/programme/${d.id}`);
     case 'stats': return aller(`#/stats/${d.id}`);
+    case 'couloir': return fenetreCouloir(derniersCouloirs.find((c) => c.id === d.id));
     case 'calendrier': calMode = null; calMois = null; S.synchroniserPlan(S.programme(d.id)); return aller(`#/calendrier/${d.id}`);
     case 'cal-mode': {
       calMode = calMode === d.mode ? null : d.mode;
@@ -1617,6 +1724,7 @@ window.addEventListener('hashchange', route);
 document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !couche.hidden) fermer(); });
 
 appliquerCouleur();
+G.activerBulles();
 suivreZoneVisible();
 route();
 setInterval(tic, 250);

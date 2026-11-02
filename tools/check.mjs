@@ -3,6 +3,8 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { nouvelleSeance, bilan, volumeSerie } from '../js/calc.js';
 import { programmeDemo } from '../js/demo.js';
+import { couloirs, ressentiPerformance } from '../js/stats.js';
+import { graduations } from '../js/graph.js';
 
 let erreurs = 0;
 const ko = (m) => { erreurs++; console.error('✗', m); };
@@ -35,5 +37,23 @@ squat.series[0].prevu.kg === 60 ? ok('valeur prévue du modèle conservée') : k
 const t = bilan(s1).tonnage;
 t === 62.5 * (10 + 9 + 8 + 7) ? ok(`tonnage ${t} kg`) : ko(`tonnage ${t}`);
 volumeSerie({ mesure: 'charge', uni: true }, { kg: 10, reps: 10, fait: true }) === 200 ? ok('unilatéral : deux côtés additionnés') : ko('unilatéral');
+
+// 3. Stats : couloir, remplacement, ponctuel.
+s1.fin = 'x'; s1.date = '2026-10-01';
+s2.date = '2026-10-05'; s2.fin = 'x';
+s2.blocs[0].exos[0].series.forEach((x) => { x.fait = true; });
+const presse = s2.blocs[1].exos[0];
+presse.remplacePar = 'hx';
+s2.blocs.push({ id: 'bh', repos: 90, exos: [{ id: 'hx', src: null, nom: 'Hack squat', mesure: 'charge', remplace: presse.id, series: [{ kg: 80, reps: 10, fait: true }] }] });
+s2.blocs.push({ id: 'bp', repos: 60, exos: [{ id: 'px', src: null, nom: 'Abducteurs', mesure: 'charge', ponctuel: true, series: [{ kg: 30, reps: 15, fait: true }] }] });
+const { couloirs: cl, ponctuels } = couloirs(p, [s1, s2]);
+const cSquat = cl.find((c) => c.id === 'e-squat');
+const cPresse = cl.find((c) => c.id === 'e-presse');
+cSquat.points.length === 2 ? ok('couloir du squat : 2 séances') : ko(`couloir squat ${cSquat.points.length}`);
+cPresse.points.length === 1 && cPresse.points[0].remplace === 'Hack squat' && cPresse.points[0].volume === 800 ? ok('remplacement compté dans le couloir du remplacé') : ko('remplacement');
+ponctuels.length === 1 && ponctuels[0].volume === 450 ? ok('exercice en plus listé comme ponctuel') : ko('ponctuel');
+JSON.stringify(graduations(62, 138, 4, true)) === '[60,90,120,150]' ? ok('graduations de durée rondes') : ko(`graduations ${graduations(62, 138, 4, true)}`);
+s1.ressenti = 3; s2.ressenti = 8;
+ressentiPerformance([s1, s2]).points.length === 2 ? ok('ressenti et performance') : ko('ressenti');
 
 process.exit(erreurs ? 1 : 0);
