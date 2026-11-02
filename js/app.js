@@ -26,6 +26,8 @@ const I = {
 };
 
 let reorganiser = false;
+const teinte = () => S.get().reglages.teinte || 'peche';
+const appliquerTeinte = () => { document.documentElement.dataset.teinte = teinte(); };
 let resumeAOuvrir = null;
 
 // --- Zone visible : suit les barres du navigateur et le clavier ---------------------
@@ -120,6 +122,9 @@ function vueAccueil() {
     </ul>` : '<p class="vide">Tes séances terminées apparaîtront ici.</p>'}
 
     <div class="pied">
+      <div class="teintes">Teinte
+        ${[['peche', 'Pêche', '#f79a78'], ['orange', 'Orange', '#ff6a3d']].map(([k, l, c]) => `<button class="puce ${teinte() === k ? 'choisi' : ''}" data-action="teinte" data-teinte="${k}"><span class="apercu" style="background:${c}"></span>${l}</button>`).join('')}
+      </div>
       <button class="lien" data-action="reinitialiser">Réinitialiser la démo</button>
     </div>`;
   flottant.innerHTML = '';
@@ -179,7 +184,7 @@ function carteBloc(s, b, idx) {
   const fini = blocFini(b);
   const tete = `
     <div class="bloc-tete">
-      ${multi ? `<span class="bloc-type">${typeBloc(b.exos.length)}</span>` : ''}
+      ${multi ? `<span class="bloc-type">${typeBloc(b.exos.length)}</span>` : `<button class="exo-nom" data-action="editer-exo" data-bloc="${b.id}" data-exo="${b.exos[0].id}">${esc(b.exos[0].nom)}</button>`}
       <span class="bloc-repos">${I.chrono} ${duree(b.repos)}</span>
       ${reorganiser ? `
         <span class="bloc-deplacer">
@@ -192,7 +197,6 @@ function carteBloc(s, b, idx) {
   if (!multi) {
     const e = b.exos[0];
     corps = `
-      <button class="exo-nom" data-action="editer-exo" data-bloc="${b.id}" data-exo="${e.id}">${esc(e.nom)}</button>
       ${etiquettes(e, s) ? `<div class="etiquettes">${etiquettes(e, s)}</div>` : ''}
       ${e.note ? `<p class="exo-note">${esc(e.note)}</p>` : ''}
       ${reorganiser ? '' : `<div class="series">${e.series.map((_, i) => ligneSerie(b, e, i, i + 1)).join('')}</div>`}`;
@@ -610,6 +614,11 @@ app.addEventListener('click', (ev) => {
     case 'accueil': return aller('#/');
     case 'reprendre': return aller('#/seance');
     case 'sauvegarder': return sauvegarder();
+    case 'teinte':
+      S.get().reglages.teinte = d.teinte;
+      S.enregistrer();
+      appliquerTeinte();
+      return vueAccueil();
     case 'reinitialiser':
       if (confirmerDeux(el)) { S.reinitialiser(); vueAccueil(); toast('Démo réinitialisée'); }
       return;
@@ -669,6 +678,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 window.addEventListener('hashchange', route);
 document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !couche.hidden) fermer(); });
 
+appliquerTeinte();
 suivreZoneVisible();
 route();
 setInterval(tic, 250);
