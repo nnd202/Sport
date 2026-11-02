@@ -273,3 +273,28 @@ body.en-glisse { user-select: none; -webkit-user-select: none; }
 .btn-icone.sur-couleur.actif { color: #fff; background: rgba(255,255,255,.2); }
 .btn-demarrer { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 44px; margin-top: 12px; border-radius: 12px; background: rgba(255,255,255,.95); color: var(--accent); font-weight: 600; font-size: 15.5px; }
 .btn-demarrer svg { width: 17px; height: 17px; }
+
+/* Configuration */
+.titre-modifiable { text-align: left; color: inherit; }
+.titre-modifiable h1 { display: flex; align-items: center; gap: 6px; }
+.crayon svg { width: 16px; height: 16px; opacity: .7; }
+.chevron-droit { color: var(--texte-3); display: grid; place-items: center; padding: 0 2px; }
+.chevron-droit svg { width: 18px; height: 18px; }
+.ligne-prog { width: 100%; text-align: left; padding: 10px 10px 10px 18px; }
+.split .split-texte { text-align: left; }
+.pastille-mini { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--c); margin-right: 6px; vertical-align: 0; }
+.modele-exo { display: flex; flex-direction: column; align-items: flex-start; width: 100%; text-align: left; padding: 3px 0; }
+.modele-exo + .modele-exo { border-top: 1px dashed var(--trait); margin-top: 4px; padding-top: 7px; }
+.modele-exo small { font-size: 13px; color: var(--texte-2); font-variant-numeric: tabular-nums; }
+.modele-exo .exo-note { margin: 1px 0 0; }
+.bloc-pied button:disabled { opacity: .35; }
+.couleurs-split { gap: 10px; }
+.pastille-couleur { width: 34px; height: 34px; border-radius: 50%; background: linear-gradient(140deg, color-mix(in srgb, var(--c) 70%, white), var(--c)); border: 3px solid #fff; box-shadow: 0 0 0 1.5px var(--trait); }
+.pastille-couleur.choisi { box-shadow: 0 0 0 2px var(--c); }
+.ligne-modele { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.mini-champ { flex: 1; display: flex; align-items: baseline; gap: 4px; border: 1.5px solid var(--trait); background: var(--fond); border-radius: 10px; padding: 5px 10px; }
+.mini-champ:focus-within { border-color: var(--a); background: #fff; }
+.mini-champ input { width: 100%; min-width: 0; border: 0; outline: 0; background: none; font-size: 17px; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+.mini-champ span { color: var(--texte-3); font-size: 13px; }
+.fenetre .lien[data-f="ajouter-ligne"] { align-self: flex-start; margin-top: -6px; }
+.btn-principal + .vide { margin-top: 0; }

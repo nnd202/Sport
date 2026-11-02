@@ -1,6 +1,6 @@
 // État de l'appli, gardé dans le stockage local du navigateur.
-import { programmeDemo } from './demo.js';
-import { nouvelleSeance, aujourdhui } from './calc.js';
+import { programmeDemo, COULEURS_SPLITS } from './demo.js';
+import { nouvelleSeance, aujourdhui, uid, bilan } from './calc.js';
 
 const CLE = 'sport-etat';
 let etat = charger();
@@ -23,7 +23,7 @@ export function enregistrer() {
 
 export const get = () => etat;
 export const programme = (id) => etat.programmes.find((p) => p.id === id);
-export const programmeEnCours = () => etat.programmes.find((p) => p.statut === 'en-cours') || etat.programmes[0];
+export const programmeEnCours = () => etat.programmes.find((p) => p.statut === 'en-cours') || null;
 export const seance = (id) => etat.seances.find((s) => s.id === id);
 export const seanceEnCours = () => (etat.encours ? seance(etat.encours) : null);
 
@@ -100,4 +100,63 @@ export function nomSauvegarde() {
 
 export function contenuSauvegarde() {
   return JSON.stringify({ appli: 'Sport', exporte: new Date().toISOString(), ...etat }, null, 2);
+}
+
+// --- Configuration --------------------------------------------------------------------
+
+export function creerProgramme(nom) {
+  const p = { id: uid('p'), nom, statut: etat.programmes.some((x) => x.statut === 'en-cours') ? 'preparation' : 'preparation', debut: null, fin: null, splits: [] };
+  etat.programmes.push(p);
+  enregistrer();
+  return p;
+}
+
+export function supprimerProgramme(id) {
+  etat.programmes = etat.programmes.filter((p) => p.id !== id);
+  etat.seances = etat.seances.filter((x) => x.programmeId !== id);
+  if (etat.encours && !seance(etat.encours)) etat.encours = null;
+  enregistrer();
+}
+
+export function couleurLibre(p) {
+  const prises = new Set(p.splits.map((s) => s.couleur));
+  return COULEURS_SPLITS.find((c) => !prises.has(c)) || COULEURS_SPLITS[p.splits.length % COULEURS_SPLITS.length];
+}
+
+export function creerSplit(p, nom, couleur) {
+  const sp = { id: uid('s'), nom, couleur: couleur || couleurLibre(p), blocs: [] };
+  p.splits.push(sp);
+  enregistrer();
+  return sp;
+}
+
+export function supprimerSplit(p, splitId) {
+  p.splits = p.splits.filter((s) => s.id !== splitId);
+  enregistrer();
+}
+
+/** Bilan d'un programme : séances, jours écoulés, tonnage total. */
+export function bilanProgramme(p, jusqua = p.fin || aujourdhui()) {
+  const l = seancesDe(p.id);
+  const jours = p.debut ? Math.round((new Date(`${jusqua}T12:00:00`) - new Date(`${p.debut}T12:00:00`)) / 864e5) + 1 : 0;
+  return { seances: l.length, jours, tonnage: l.reduce((a, x) => a + bilan(x).tonnage, 0) };
+}
+
+/** Bascule : clôture le programme en cours (s'il y en a un) et démarre p à la date donnée. */
+export function basculer(p, date) {
+  const ancien = programmeEnCours();
+  if (ancien && ancien !== p) { ancien.statut = 'termine'; ancien.fin = date; }
+  p.statut = 'en-cours';
+  p.debut = date;
+  p.fin = null;
+  enregistrer();
+  return ancien;
+}
+
+export function rouvrir(p) {
+  const actuel = programmeEnCours();
+  if (actuel && actuel !== p) { actuel.statut = 'preparation'; }
+  p.statut = 'en-cours';
+  p.fin = null;
+  enregistrer();
 }

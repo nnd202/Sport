@@ -1,6 +1,7 @@
 // Interface de Sport : accueil, séance, récap, chrono, fenêtres de saisie.
 import * as S from './store.js';
-import { uid, duree, dureeSeance, dateCourte, kg, texteSerie, bilan, MESURES } from './calc.js';
+import { uid, duree, dureeSeance, dateCourte, kg, texteSerie, bilan, MESURES, aujourdhui } from './calc.js';
+import { COULEURS_SPLITS } from './demo.js';
 
 const app = document.getElementById('app');
 const flottant = document.getElementById('flottant');
@@ -23,6 +24,9 @@ const I = {
   ecran: '<svg viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2.5"/><path d="M11 18h2"/></svg>',
   partage: '<svg viewBox="0 0 24 24"><path d="M12 15V4M8 8l4-4 4 4"/><path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/></svg>',
   chrono: '<svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="7.5"/><path d="M12 13V9.5M10 3h4"/></svg>',
+  droite: '<svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>',
+  crayon: '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>',
+  liste: '<svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2" class="plein"/><circle cx="4.5" cy="12" r="1.2" class="plein"/><circle cx="4.5" cy="18" r="1.2" class="plein"/></svg>',
   poignee: '<svg viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.5" class="plein"/><circle cx="15" cy="6" r="1.5" class="plein"/><circle cx="9" cy="12" r="1.5" class="plein"/><circle cx="15" cy="12" r="1.5" class="plein"/><circle cx="9" cy="18" r="1.5" class="plein"/><circle cx="15" cy="18" r="1.5" class="plein"/></svg>',
 };
 
@@ -63,6 +67,14 @@ function route() {
   if (h.startsWith('#/seance') && S.seanceEnCours()) return vueSeance();
   const m = h.match(/^#\/recap\/(.+)$/);
   if (m && S.seance(m[1])) return vueRecap(S.seance(m[1]));
+  if (h === '#/programmes') return vueProgrammes();
+  const mp = h.match(/^#\/programme\/([^/]+)$/);
+  if (mp && S.programme(mp[1])) return vueProgramme(S.programme(mp[1]));
+  const ms = h.match(/^#\/split\/([^/]+)\/([^/]+)$/);
+  if (ms && S.programme(ms[1])) {
+    const sp = S.programme(ms[1]).splits.find((x) => x.id === ms[2]);
+    if (sp) return vueSplit(S.programme(ms[1]), sp);
+  }
   return vueAccueil();
 }
 
@@ -80,13 +92,28 @@ function vueAccueil() {
   gererVeille();
   flottant.innerHTML = '';
   const p = S.programmeEnCours();
-  const faites = S.seancesDe(p.id);
   const enCours = S.seanceEnCours();
+  if (!p) {
+    const prep = S.get().programmes.filter((x) => x.statut === 'preparation');
+    app.innerHTML = `
+      <header class="bandeau-tete">
+        <div class="bandeau-ligne">
+          <div class="bandeau-titre"><small>Sport</small><h1>Aucun programme en cours</h1></div>
+          <button class="btn-icone sur-couleur" data-action="programmes" aria-label="Programmes">${I.liste}</button>
+          <button class="btn-icone sur-couleur" data-action="sauvegarder" aria-label="Sauvegarder">${I.partage}</button>
+        </div>
+      </header>
+      <p class="vide">${prep.length ? `Démarre ${prep.length > 1 ? 'un de tes programmes en préparation' : esc(prep[0].nom)} quand tu es prêt.` : 'Crée ton premier programme pour commencer.'}</p>
+      <button class="btn btn-principal btn-large" data-action="${prep.length === 1 ? 'programme' : 'programmes'}" ${prep.length === 1 ? `data-id="${prep[0].id}"` : ''}>${prep.length ? 'Voir les programmes' : 'Créer un programme'}</button>`;
+    return;
+  }
+  const faites = S.seancesDe(p.id);
 
   app.innerHTML = `
     <header class="bandeau-tete">
       <div class="bandeau-ligne">
-        <div class="bandeau-titre"><small>Programme en cours</small><h1>${esc(p.nom)}</h1></div>
+        <button class="bandeau-titre titre-modifiable" data-action="programme" data-id="${p.id}"><small>Programme en cours</small><h1>${esc(p.nom)} <span class="crayon">${I.droite}</span></h1></button>
+        <button class="btn-icone sur-couleur" data-action="programmes" aria-label="Programmes">${I.liste}</button>
         <button class="btn-icone sur-couleur" data-action="sauvegarder" aria-label="Sauvegarder">${I.partage}</button>
       </div>
       <div class="bandeau-chiffres">
@@ -103,7 +130,8 @@ function vueAccueil() {
       </button>` : ''}
 
     <h3 class="titre-section">Splits</h3>
-    <ul class="pool" data-liste="splits">
+    ${p.splits.length ? '' : `<p class="vide">Ce programme n'a pas encore de split.</p><button class="btn btn-large" data-action="programme" data-id="${p.id}">Configurer le programme</button>`}
+    <ul class="pool" data-liste="splits" data-programme="${p.id}">
       ${p.splits.map((sp) => {
         const der = S.derniereDuSplit(p.id, sp.id);
         const j = der ? joursDepuis(der.date) : null;
@@ -212,8 +240,12 @@ function activerGlisser(ev) {
       document.body.classList.remove('en-glisse');
     }, 170);
     const ids = [...liste.children].map((x) => x.dataset.id);
-    if (liste.dataset.liste === 'splits') S.ordonnerSplits(S.programmeEnCours().id, ids);
-    else {
+    const trier = (arr) => arr.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+    if (liste.dataset.liste === 'splits') S.ordonnerSplits(liste.dataset.programme, ids);
+    else if (liste.dataset.liste === 'modele') {
+      trier(S.programme(liste.dataset.programme).splits.find((x) => x.id === liste.dataset.split).blocs);
+      S.enregistrer();
+    } else {
       const s = S.seanceEnCours();
       s.blocs.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
       S.enregistrer();
@@ -222,6 +254,279 @@ function activerGlisser(ev) {
   window.addEventListener('pointermove', suivre, { passive: true });
   window.addEventListener('pointerup', lacher);
   window.addEventListener('pointercancel', lacher);
+}
+
+// --- Configuration : programmes ---------------------------------------------------
+
+const STATUTS = { 'en-cours': 'En cours', preparation: 'En préparation', termine: 'Terminé' };
+
+function vueProgrammes() {
+  flottant.innerHTML = '';
+  const tous = S.get().programmes;
+  const groupe = (statut) => tous.filter((p) => p.statut === statut);
+  const carte = (p) => {
+    const b = S.bilanProgramme(p);
+    const dates = p.debut ? `${dateCourte(p.debut)}${p.fin ? ` → ${dateCourte(p.fin)}` : ''}` : 'Pas encore commencé';
+    return `<li><button class="split ligne-prog" data-action="programme" data-id="${p.id}" style="--c:var(--b)">
+      <span class="split-texte"><strong>${esc(p.nom)}</strong><small>${dates} · ${p.splits.length} split${p.splits.length > 1 ? 's' : ''}${b.seances ? ` · ${b.seances} séance${b.seances > 1 ? 's' : ''}` : ''}</small></span>
+      <span class="chevron-droit">${I.droite}</span>
+    </button></li>`;
+  };
+  const section = (statut) => (groupe(statut).length ? `<h3 class="titre-section">${STATUTS[statut]}</h3><ul class="pool">${groupe(statut).map(carte).join('')}</ul>` : '');
+  app.innerHTML = `
+    <header class="bandeau-tete">
+      <div class="bandeau-ligne">
+        <button class="btn-icone sur-couleur" data-action="accueil" aria-label="Accueil">${I.retour}</button>
+        <div class="bandeau-titre"><h1>Programmes</h1></div>
+      </div>
+    </header>
+    ${section('en-cours')}${section('preparation')}${section('termine')}
+    <button class="ajout" data-action="nouveau-programme">${I.plus} Nouveau programme</button>`;
+  window.scrollTo(0, 0);
+}
+
+function vueProgramme(p) {
+  flottant.innerHTML = '';
+  const b = S.bilanProgramme(p);
+  const actuel = S.programmeEnCours();
+  app.innerHTML = `
+    <header class="bandeau-tete">
+      <div class="bandeau-ligne">
+        <button class="btn-icone sur-couleur" data-action="programmes" aria-label="Programmes">${I.retour}</button>
+        <button class="bandeau-titre titre-modifiable" data-action="renommer-programme" data-id="${p.id}"><small>${STATUTS[p.statut]}</small><h1>${esc(p.nom)} <span class="crayon">${I.crayon}</span></h1></button>
+      </div>
+      <div class="bandeau-chiffres">
+        <span>${p.debut ? `${dateCourte(p.debut)}${p.fin ? ` → ${dateCourte(p.fin)}` : ''}` : 'Pas encore commencé'}</span>
+        ${p.debut ? `<span><b>${b.seances}</b> séance${b.seances > 1 ? 's' : ''} en <b>${b.jours}</b> j</span>` : ''}
+      </div>
+      ${p.statut === 'preparation' ? `<button class="btn-demarrer" data-action="basculer" data-id="${p.id}">${I.play} Démarrer ce programme</button>` : ''}
+    </header>
+
+    ${p.statut === 'termine' ? `
+      <div class="tuiles">
+        <div class="tuile"><small>Séances</small><strong>${b.seances}</strong></div>
+        <div class="tuile"><small>Durée</small><strong>${b.jours} j</strong></div>
+        <div class="tuile large"><small>Tonnage total</small><strong>${kg(Math.round(b.tonnage))} kg</strong></div>
+      </div>` : ''}
+
+    <h3 class="titre-section">Splits</h3>
+    ${p.splits.length ? `<ul class="pool" data-liste="splits" data-programme="${p.id}">
+      ${p.splits.map((sp) => `
+        <li class="split" data-id="${sp.id}" style="--c:${sp.couleur}">
+          <span class="poignee" data-glisser aria-label="Déplacer">${I.poignee}</span>
+          <button class="split-texte" data-action="split" data-programme="${p.id}" data-split="${sp.id}">
+            <strong>${esc(sp.nom)}</strong>
+            <small>${(() => { const n = sp.blocs.reduce((a, bl) => a + bl.exos.length, 0); return n ? `${n} exercice${n > 1 ? 's' : ''}` : 'Vide : à remplir'; })()}</small>
+          </button>
+          <span class="chevron-droit">${I.droite}</span>
+        </li>`).join('')}
+    </ul>` : '<p class="vide">Ajoute les splits de ce programme : Legs, Push, Pull…</p>'}
+    <button class="ajout" data-action="nouveau-split" data-programme="${p.id}">${I.plus} Ajouter un split</button>
+
+    <div class="pied">
+      ${p.statut === 'termine' && !actuel ? `<button class="lien" data-action="rouvrir" data-id="${p.id}">Rouvrir ce programme</button><br>` : ''}
+      <button class="lien danger" data-action="supprimer-programme" data-id="${p.id}">Supprimer ce programme</button>
+    </div>`;
+  window.scrollTo(0, 0);
+}
+
+function fenetreNom(titre, valeur, aide, onOk, extra = '') {
+  ouvrirFenetre(`
+    <form>
+      <h2>${titre}</h2>
+      <label class="champ"><span>Nom</span><input name="nom" value="${esc(valeur)}" required autocomplete="off"></label>
+      ${extra}
+      ${aide ? `<p class="aide">${aide}</p>` : ''}
+      <button class="btn btn-principal btn-large">Enregistrer</button>
+    </form>`, (fd) => { const n = fd.get('nom').trim(); if (n) onOk(n, fd); });
+  setTimeout(() => couche.querySelector('[name=nom]')?.select(), 60);
+}
+
+function choixCouleurSplit(actuelle) {
+  return `<p class="titre-choix">Couleur</p>
+    <div class="choix couleurs-split" data-groupe>
+      <input type="hidden" name="couleur" value="${actuelle}">
+      ${COULEURS_SPLITS.map((c) => `<button type="button" class="pastille-couleur ${c === actuelle ? 'choisi' : ''}" data-choix="${c}" style="--c:${c}" aria-label="Couleur"></button>`).join('')}
+    </div>`;
+}
+
+function fenetreBascule(p) {
+  if (S.seanceEnCours()) return toast("Termine d'abord la séance en cours");
+  const ancien = S.programmeEnCours();
+  const date = aujourdhui();
+  const bil = ancien ? S.bilanProgramme(ancien, date) : null;
+  ouvrirFenetre(`
+    <form>
+      <h2>Démarrer ${esc(p.nom)}</h2>
+      <label class="champ"><span>Date de début</span><input type="date" name="date" value="${date}" required></label>
+      ${ancien ? `
+        <p class="aide">${esc(ancien.nom)} sera clôturé à cette date :</p>
+        <div class="tuiles">
+          <div class="tuile"><small>Séances</small><strong>${bil.seances}</strong></div>
+          <div class="tuile"><small>Durée</small><strong data-jours>${bil.jours} j</strong></div>
+          <div class="tuile large"><small>Tonnage total</small><strong>${kg(Math.round(bil.tonnage))} kg</strong></div>
+        </div>` : ''}
+      ${p.splits.length ? '' : '<p class="aide">Ce programme n\'a pas encore de split.</p>'}
+      <button class="btn btn-principal btn-large">Démarrer le programme</button>
+    </form>`, (fd) => {
+    S.basculer(p, fd.get('date'));
+    fermer();
+    toast(`${p.nom} démarré`);
+    aller('#/');
+  });
+  const champ = couche.querySelector('[name=date]');
+  if (ancien) champ.addEventListener('change', () => {
+    couche.querySelector('[data-jours]').textContent = `${S.bilanProgramme(ancien, champ.value).jours} j`;
+  });
+}
+
+// --- Configuration : éditeur de split -----------------------------------------------
+
+function texteModele(e) {
+  if (!e.series.length) return 'aucune série';
+  const t = e.series.map((x) => texteSerie(e, x));
+  const pareil = t.every((x) => x === t[0]);
+  return pareil ? `${e.series.length} × ${t[0]}` : t.join(' · ');
+}
+
+function vueSplit(p, sp) {
+  flottant.innerHTML = '';
+  app.innerHTML = `
+    <header class="bandeau-tete seance" style="--c:${sp.couleur}">
+      <div class="bandeau-ligne">
+        <button class="btn-icone sur-couleur" data-action="programme" data-id="${p.id}" aria-label="Retour">${I.retour}</button>
+        <button class="bandeau-titre titre-modifiable" data-action="renommer-split" data-programme="${p.id}" data-split="${sp.id}">
+          <small><span class="pastille-mini" style="--c:${sp.couleur}"></span>${esc(p.nom)} · modèle du split</small>
+          <h1>${esc(sp.nom)} <span class="crayon">${I.crayon}</span></h1></button>
+      </div>
+    </header>
+    <p class="aide centre">Les changements valent pour les prochaines séances, jamais pour les séances passées.</p>
+
+    <div class="blocs" data-liste="modele" data-programme="${p.id}" data-split="${sp.id}">
+      ${sp.blocs.map((b) => `
+        <article class="bloc" data-id="${b.id}">
+          <div class="bloc-tete">
+            <span class="poignee" data-glisser aria-label="Déplacer">${I.poignee}</span>
+            <div class="bloc-titres">
+              ${b.exos.map((e) => `
+                <button class="modele-exo" data-action="modele-exo" data-programme="${p.id}" data-split="${sp.id}" data-bloc="${b.id}" data-exo="${e.id}">
+                  <span class="exo-titre"><span class="exo-nom">${esc(e.nom)}</span>${e.uni ? '<span class="etiquette">Unilatéral</span>' : ''}</span>
+                  <small>${texteModele(e)}${e.mesure !== 'charge' ? ` · ${MESURES[e.mesure].toLowerCase()}` : ''}</small>
+                  ${e.note ? `<small class="exo-note">${esc(e.note)}</small>` : ''}
+                </button>`).join('')}
+            </div>
+          </div>
+          <div class="bloc-pied">
+            <button data-action="modele-repos" data-programme="${p.id}" data-split="${sp.id}" data-bloc="${b.id}">${I.chrono} repos ${duree(b.repos)}</button>
+            <button data-action="modele-enchainer" data-programme="${p.id}" data-split="${sp.id}" data-bloc="${b.id}" ${b.exos.length >= 4 ? 'disabled' : ''}>${I.plus} enchaîner</button>
+          </div>
+        </article>`).join('')}
+    </div>
+    ${sp.blocs.length ? '' : '<p class="vide">Ajoute les exercices de ce split, dans l\'ordre où tu les fais.</p>'}
+    <button class="ajout" data-action="modele-ajouter" data-programme="${p.id}" data-split="${sp.id}">${I.plus} Ajouter un exercice</button>
+    <p class="aide centre">« Enchaîner » ajoute un exercice au même bloc (biset, superset, circuit).</p>
+
+    <div class="pied"><button class="lien danger" data-action="supprimer-split" data-programme="${p.id}" data-split="${sp.id}">Supprimer ce split</button></div>`;
+}
+
+function valeursParDefaut(mesure) {
+  if (mesure === 'temps') return { sec: 30 };
+  if (mesure === 'pdc') return { reps: 10 };
+  return { kg: 20, reps: 10 };
+}
+
+function lignesSeries(mesure, series) {
+  return series.map((x, i) => `
+    <div class="ligne-modele" data-ligne>
+      <span class="serie-num">${i + 1}</span>
+      ${mesure === 'charge' ? `<label class="mini-champ"><input name="kg" inputmode="decimal" value="${String(x.kg ?? 0).replace('.', ',')}"><span>kg</span></label>` : ''}
+      ${mesure === 'temps' ? `<label class="mini-champ"><input name="sec" inputmode="numeric" value="${x.sec ?? 30}"><span>s</span></label>`
+        : `<label class="mini-champ"><input name="reps" inputmode="numeric" value="${x.reps ?? 10}"><span>reps</span></label>`}
+      <button type="button" class="btn-icone petit" data-f="retirer-ligne" aria-label="Retirer la série">${I.croix}</button>
+    </div>`).join('');
+}
+
+function lireLignes(form, mesure) {
+  return [...form.querySelectorAll('[data-ligne]')].map((l) => {
+    const v = (n) => l.querySelector(`[name="${n}"]`)?.value;
+    if (mesure === 'temps') return { sec: Math.max(0, Math.round(num(v('sec')))) };
+    if (mesure === 'pdc') return { reps: Math.max(0, Math.round(num(v('reps')))) };
+    return { kg: Math.max(0, num(v('kg'))), reps: Math.max(0, Math.round(num(v('reps')))) };
+  });
+}
+
+/** Fenêtre d'un exercice du modèle. bloc null = nouvel exercice dans un nouveau bloc. */
+function fenetreModeleExo(p, sp, bloc, exo) {
+  const nouveau = !exo;
+  const e = exo || { nom: '', mesure: 'charge', uni: false, note: '', series: [valeursParDefaut('charge'), valeursParDefaut('charge'), valeursParDefaut('charge')] };
+  ouvrirFenetre(`
+    <form>
+      <h2>${nouveau ? (bloc ? 'Enchaîner un exercice' : 'Nouvel exercice') : 'Exercice du modèle'}</h2>
+      <label class="champ"><span>Nom</span><input name="nom" value="${esc(e.nom)}" required autocomplete="off" placeholder="Squat"></label>
+      ${choixMesure(e.mesure)}
+      <label class="interrupteur"><input type="checkbox" name="uni" ${e.uni ? 'checked' : ''}><span></span>Unilatéral (valeurs par côté)</label>
+      <p class="titre-choix">Séries prévues</p>
+      <div data-lignes>${lignesSeries(e.mesure, e.series)}</div>
+      <button type="button" class="lien" data-f="ajouter-ligne">${I.plus} série</button>
+      <label class="champ"><span>Consigne</span><textarea name="note" rows="2" placeholder="Tempo 3-1-1, bras opposé en tension, demi-reps en fin de série…">${esc(e.note)}</textarea></label>
+      <button class="btn btn-principal btn-large">Enregistrer</button>
+      ${nouveau ? '' : '<div class="actions-sec"><button type="button" class="lien danger" data-f="supprimer">Supprimer cet exercice</button></div>'}
+    </form>`, (fd, form) => {
+    const mesure = fd.get('mesure');
+    const donnees = { nom: fd.get('nom').trim(), mesure, uni: fd.get('uni') === 'on', note: fd.get('note').trim(), series: lireLignes(form, mesure) };
+    if (nouveau) {
+      const ex = { id: uid('e'), ...donnees };
+      if (bloc) bloc.exos.push(ex);
+      else sp.blocs.push({ id: uid('b'), repos: 90, exos: [ex] });
+    } else Object.assign(exo, donnees);
+    S.enregistrer(); fermer(); vueSplit(p, sp);
+  });
+  const form = couche.querySelector('form');
+  const zone = form.querySelector('[data-lignes]');
+  const renumeroter = () => zone.querySelectorAll('[data-ligne] .serie-num').forEach((n, i) => { n.textContent = i + 1; });
+  form.querySelector('[data-f="ajouter-ligne"]').onclick = () => {
+    const mesure = form.elements.mesure.value;
+    const actuelles = lireLignes(form, mesure);
+    const derniere = actuelles[actuelles.length - 1] || valeursParDefaut(mesure);
+    zone.insertAdjacentHTML('beforeend', lignesSeries(mesure, [derniere]));
+    renumeroter();
+  };
+  zone.addEventListener('click', (ev) => {
+    const r = ev.target.closest('[data-f="retirer-ligne"]');
+    if (r) { r.closest('[data-ligne]').remove(); renumeroter(); }
+  });
+  form.elements.mesure.addEventListener('change', () => {
+    const mesure = form.elements.mesure.value;
+    const n = zone.querySelectorAll('[data-ligne]').length || 3;
+    zone.innerHTML = lignesSeries(mesure, Array.from({ length: n }, () => valeursParDefaut(mesure)));
+  });
+  const sup = form.querySelector('[data-f="supprimer"]');
+  if (sup) sup.onclick = () => {
+    if (!confirmerDeux(sup)) return;
+    bloc.exos = bloc.exos.filter((x) => x.id !== exo.id);
+    if (!bloc.exos.length) sp.blocs = sp.blocs.filter((x) => x.id !== bloc.id);
+    S.enregistrer(); fermer(); vueSplit(p, sp);
+  };
+  if (nouveau) setTimeout(() => form.elements.nom.focus(), 60);
+}
+
+function fenetreModeleRepos(p, sp, bloc) {
+  ouvrirFenetre(`
+    <form>
+      <h2>Repos prévu</h2>
+      <p class="aide">Entre deux séries${bloc.exos.length > 1 ? ' (ou deux tours)' : ''} de ce bloc.</p>
+      ${stepper('repos', 'Secondes', bloc.repos, 15, 's')}
+      <p class="aide centre" data-lisible>${duree(bloc.repos)}</p>
+      <button class="btn btn-principal btn-large">Enregistrer</button>
+    </form>`, (fd) => {
+    bloc.repos = Math.max(0, Math.round(num(fd.get('repos'))));
+    S.enregistrer(); fermer(); vueSplit(p, sp);
+  });
+  const champ = couche.querySelector('[name=repos]');
+  const lisible = couche.querySelector('[data-lisible]');
+  const maj = () => { lisible.textContent = duree(num(champ.value)); };
+  champ.addEventListener('input', maj);
+  couche.querySelector('form').addEventListener('click', () => setTimeout(maj, 0));
 }
 
 // --- Séance -------------------------------------------------------------------------
@@ -800,6 +1105,51 @@ app.addEventListener('click', (ev) => {
       if (confirmerDeux(el)) { const c = couleur(); S.reinitialiser(); S.get().reglages.couleur = c; S.enregistrer(); vueAccueil(); toast('Démo réinitialisée'); }
       return;
     case 'recap': return aller(`#/recap/${d.id}`);
+    case 'programmes': return aller('#/programmes');
+    case 'programme': return aller(`#/programme/${d.id}`);
+    case 'split': return aller(`#/split/${d.programme}/${d.split}`);
+    case 'nouveau-programme':
+      return fenetreNom('Nouveau programme', '', 'Il démarre en préparation : tu le construis pendant le programme en cours, puis tu le démarres le jour J.', (n) => {
+        const np = S.creerProgramme(n); fermer(); aller(`#/programme/${np.id}`);
+      });
+    case 'renommer-programme': {
+      const pr = S.programme(d.id);
+      return fenetreNom('Programme', pr.nom, '', (n) => { pr.nom = n; S.enregistrer(); fermer(); vueProgramme(pr); });
+    }
+    case 'basculer': return fenetreBascule(S.programme(d.id));
+    case 'rouvrir': S.rouvrir(S.programme(d.id)); return vueProgramme(S.programme(d.id));
+    case 'supprimer-programme':
+      if (S.seanceEnCours()?.programmeId === d.id) return toast("Termine d'abord la séance en cours");
+      if (confirmerDeux(el)) { S.supprimerProgramme(d.id); toast('Programme supprimé'); aller('#/programmes'); }
+      return;
+    case 'nouveau-split': {
+      const pr = S.programme(d.programme);
+      return fenetreNom('Nouveau split', '', '', (n, fd) => {
+        const sp = S.creerSplit(pr, n, fd.get('couleur')); fermer(); aller(`#/split/${pr.id}/${sp.id}`);
+      }, choixCouleurSplit(S.couleurLibre(pr)));
+    }
+    case 'renommer-split': {
+      const pr = S.programme(d.programme);
+      const sp = pr.splits.find((x) => x.id === d.split);
+      return fenetreNom('Split', sp.nom, '', (n, fd) => { sp.nom = n; sp.couleur = fd.get('couleur'); S.enregistrer(); fermer(); vueSplit(pr, sp); }, choixCouleurSplit(sp.couleur));
+    }
+    case 'supprimer-split': {
+      const pr = S.programme(d.programme);
+      if (confirmerDeux(el)) { S.supprimerSplit(pr, d.split); toast('Split supprimé'); aller(`#/programme/${pr.id}`); }
+      return;
+    }
+    case 'modele-exo':
+    case 'modele-repos':
+    case 'modele-enchainer':
+    case 'modele-ajouter': {
+      const pr = S.programme(d.programme);
+      const sp = pr.splits.find((x) => x.id === d.split);
+      const bl = d.bloc ? sp.blocs.find((x) => x.id === d.bloc) : null;
+      if (d.action === 'modele-exo') return fenetreModeleExo(pr, sp, bl, bl.exos.find((x) => x.id === d.exo));
+      if (d.action === 'modele-repos') return fenetreModeleRepos(pr, sp, bl);
+      if (d.action === 'modele-enchainer') return fenetreModeleExo(pr, sp, bl, null);
+      return fenetreModeleExo(pr, sp, null, null);
+    }
     case 'supprimer-seance':
       if (confirmerDeux(el)) { S.supprimerSeance(d.id); aller('#/'); toast('Séance supprimée'); }
       return;
