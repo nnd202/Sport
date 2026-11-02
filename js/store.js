@@ -66,6 +66,14 @@ export function ordonnerSplits(programmeId, ids) {
 }
 
 export function terminer(s, { ressenti, note }) {
+  if (s.edition) {
+    // Modification d'une séance déjà terminée : les dates restent.
+    delete s.edition;
+    s.ressenti = ressenti; s.note = note || ''; s.chrono = null;
+    etat.encours = null; delete etat.copieEdition;
+    enregistrer();
+    return;
+  }
   if (!s.debut) lancer(s);
   // Séance saisie à une autre date : on garde les heures saisies.
   if (!s.passee) s.fin = new Date().toISOString();
@@ -252,13 +260,39 @@ export function chronologie(p) {
 
 export function plan(p) {
   p.plan ||= { splits: {}, libres: [], bloques: [] };
-  // Le plan reprend les dates déjà appliquées.
-  for (const sp of p.splits) if (sp.prevu && !p.plan.splits[sp.id]) p.plan.splits[sp.id] = sp.prevu;
   return p.plan;
+}
+
+/** À l'ouverture du calendrier : le plan repart des dates appliquées. */
+export function synchroniserPlan(p) {
+  const pl = plan(p);
+  pl.splits = {};
+  for (const sp of p.splits) if (sp.prevu) pl.splits[sp.id] = sp.prevu;
+  enregistrer();
 }
 
 export function appliquerPlan(p) {
   const pl = plan(p);
   for (const sp of p.splits) sp.prevu = pl.splits[sp.id] || null;
+  enregistrer();
+}
+
+// --- Modifier une séance terminée -------------------------------------------------------
+
+export function rouvrirSeance(s) {
+  if (etat.encours) return false;
+  etat.copieEdition = JSON.stringify(s);
+  s.edition = true;
+  s.blocs.forEach((b) => { b.replie = true; });
+  etat.encours = s.id;
+  enregistrer();
+  return true;
+}
+
+export function annulerEdition(s) {
+  const i = etat.seances.findIndex((x) => x.id === s.id);
+  if (i >= 0 && etat.copieEdition) etat.seances[i] = JSON.parse(etat.copieEdition);
+  delete etat.copieEdition;
+  etat.encours = null;
   enregistrer();
 }

@@ -475,11 +475,11 @@ function vueCalendrier(p) {
     <p class="titre-choix">Placer</p>
     <div class="cal-outils">
       ${p.splits.map((sp) => `<button class="cal-outil ${calMode === sp.id ? 'actif' : ''}" data-action="cal-mode" data-mode="${sp.id}" style="--c:${sp.couleur}">
-        <i></i>${esc(sp.nom)}<small>${pl.splits[sp.id] ? dateCourte(pl.splits[sp.id]) : '—'}</small></button>`).join('')}
+        <i class="${pl.splits[sp.id] ? 'place' : ''}"></i>${esc(sp.nom)}</button>`).join('')}
       <button class="cal-outil autre ${calMode === 'libre' ? 'actif' : ''}" data-action="cal-mode" data-mode="libre"><i class="pointille"></i>Séance libre</button>
       <button class="cal-outil autre ${calMode === 'bloquer' ? 'actif' : ''}" data-action="cal-mode" data-mode="bloquer"><i class="hachure"></i>Bloquer un jour</button>
     </div>
-    <p class="aide cal-aide">${calMode ? `Touche un jour pour placer ${modeNom}. Retouche-le pour l'enlever.` : 'Choisis ce que tu veux placer, puis touche un jour.'}</p>
+    <p class="aide cal-aide">${calMode ? `Touche un jour pour placer ${modeNom}. Retouche-le pour l'enlever.` : 'Choisis ce que tu veux placer, puis touche un jour. Carré plein : split déjà placé.'}</p>
 
     <div class="cal">
       <div class="cal-tete">
@@ -491,8 +491,8 @@ function vueCalendrier(p) {
       <div class="cal-grille">${cases}</div>
     </div>
 
-    <button class="btn btn-principal btn-large" data-action="cal-appliquer" data-id="${p.id}" ${modifie ? '' : 'data-rien="1"'}>Appliquer les dates aux splits à venir</button>
-    <p class="aide centre">Les dates appliquées s'affichent dans tes splits. Elles restent indicatives : tu ouvres le split que tu veux, quand tu veux.</p>`;
+    <button class="btn btn-principal btn-large" data-action="cal-appliquer" data-id="${p.id}">Appliquer les dates aux splits à venir</button>
+    <p class="aide centre">${modifie ? 'Des changements ne sont pas encore appliqués. ' : ''}Un split sans date placée perd sa date prévue. Les dates restent indicatives : tu ouvres le split que tu veux, quand tu veux.</p>`;
 }
 
 function calToucherJour(p, date) {
@@ -505,7 +505,17 @@ function calToucherJour(p, date) {
   }
   if (date < auj) return toast('On ne planifie que les jours à venir');
   if (calMode === 'bloquer') {
-    pl.bloques = pl.bloques.includes(date) ? pl.bloques.filter((d) => d !== date) : [...pl.bloques, date];
+    if (pl.bloques.includes(date)) pl.bloques = pl.bloques.filter((d) => d !== date);
+    else {
+      pl.bloques = [...pl.bloques, date];
+      // Un jour bloqué libère ce qui y était placé.
+      const retires = p.splits.filter((sp) => pl.splits[sp.id] === date);
+      retires.forEach((sp) => { delete pl.splits[sp.id]; });
+      const libres = pl.libres.filter((l) => l.date === date);
+      pl.libres = pl.libres.filter((l) => l.date !== date);
+      const noms = [...retires.map((sp) => sp.nom), ...libres.map((l) => l.nom)];
+      if (noms.length) toast(`Retiré : ${noms.join(', ')}`);
+    }
   } else if (calMode === 'libre') {
     const deja = pl.libres.find((l) => l.date === date);
     if (deja) pl.libres = pl.libres.filter((l) => l !== deja);
@@ -957,7 +967,7 @@ function vueSeance() {
       <div class="bandeau-ligne">
         <button class="btn-icone sur-couleur" data-action="ouvrir-programme" data-id="${s.programmeId}" aria-label="Retour au programme">${I.retour}</button>
         <div class="bandeau-titre"><h1>${esc(s.nom)}</h1>
-          <small>${s.passee ? `Séance du ${dateCourte(s.date)}${S.heure(s.debut) !== '12:00' ? ` · ${S.heure(s.debut)}` : ''}` : s.debut ? `${dateCourte(s.date)} · <span data-temps-seance>${duree(b.dureeSec)}</span>` : 'Pas commencée'}</small></div>
+          <small>${s.edition ? `Modification · séance du ${dateCourte(s.date)}` : s.passee ? `Séance du ${dateCourte(s.date)}${S.heure(s.debut) !== '12:00' ? ` · ${S.heure(s.debut)}` : ''}` : s.debut ? `${dateCourte(s.date)} · <span data-temps-seance>${duree(b.dureeSec)}</span>` : 'Pas commencée'}</small></div>
         <button class="btn-icone sur-couleur ${r.antiVeille ? 'actif' : ''}" data-action="veille" aria-label="Garder l'écran allumé" aria-pressed="${r.antiVeille}">${I.ecran}</button>
         <button class="btn-icone sur-couleur" data-action="menu-seance" aria-label="Plus d'actions">${I.menu}</button>
       </div>
@@ -971,7 +981,8 @@ function vueSeance() {
     <div class="blocs" data-liste="blocs">${s.blocs.map((bl) => carteBloc(s, bl)).join('')}</div>
 
     <button class="ajout" data-action="ajouter-exo">${I.plus} Ajouter un exercice</button>
-    ${s.debut ? '<button class="btn btn-principal btn-large" data-action="terminer">Terminer la séance</button>' : ''}
+    ${s.debut ? `<button class="btn btn-principal btn-large" data-action="terminer">${s.edition ? 'Enregistrer les modifications' : 'Terminer la séance'}</button>` : ''}
+    ${s.edition ? '<div class="actions-sec"><button class="lien" data-action="annuler-edition">Annuler les modifications</button></div>' : ''}
     <div class="espace-chrono"></div>`;
   dessinerChrono();
 }
@@ -1014,6 +1025,7 @@ function vueRecap(s) {
         </div>`;
       }).join('')).join('')}
     </div>
+    <button class="btn btn-large" data-action="modifier-seance" data-id="${s.id}">${I.crayon} Modifier cette séance</button>
     <div class="pied"><button class="lien danger" data-action="supprimer-seance" data-id="${s.id}">Supprimer cette séance</button></div>`;
   window.scrollTo(0, 0);
 }
@@ -1028,7 +1040,8 @@ function blocCourant(s) {
 
 function dessinerChrono() {
   const s = S.seanceEnCours();
-  if (!s || !location.hash.startsWith('#/seance')) { flottant.innerHTML = ''; return; }
+  // Pas de chrono pour une séance saisie après coup : les repos se saisissent dans chaque série.
+  if (!s || !location.hash.startsWith('#/seance') || s.edition || s.passee) { flottant.innerHTML = ''; return; }
   const a = ancreCourante(s);
   const b = s.chrono ? s.blocs.find((x) => x.id === s.chrono.blocId) : (a ? s.blocs.find((x) => x.id === a.bloc) : blocCourant(s));
   const marche = !!s.chrono;
@@ -1198,6 +1211,19 @@ couche.addEventListener('click', (ev) => {
   }
 });
 
+function reposDe(s, blocId, exoId, i) {
+  return s.repos.find((r) => r.ancre && r.ancre.bloc === blocId && r.ancre.exo === exoId && r.ancre.i === i);
+}
+
+/** Repos saisi à la main (séance après coup ou correction). 0 = pas de repos. */
+function saisirRepos(s, blocId, exoId, i, sec) {
+  const r = reposDe(s, blocId, exoId, i);
+  if (!sec) { if (r) s.repos.splice(s.repos.indexOf(r), 1); return; }
+  const prevu = s.blocs.find((b) => b.id === blocId)?.repos || 0;
+  if (r) r.reel = sec;
+  else s.repos.push({ blocId, ancre: { bloc: blocId, exo: exoId, i }, prevu, reel: sec, a: new Date().toISOString(), manuel: true });
+}
+
 function fenetreSerie(s, blocId, exoId, i) {
   const { e } = trouver(s, blocId, exoId);
   const v = e.series[i];
@@ -1206,6 +1232,7 @@ function fenetreSerie(s, blocId, exoId, i) {
       <h2>${esc(e.nom)} <small>série ${i + 1}</small></h2>
       ${v.prevu ? `<p class="aide">Prévu : ${texteSerie(e, v.prevu)}${e.uni ? ' par côté' : ''}</p>` : ''}
       ${champsMesure(e.mesure, v)}
+      ${s.edition || s.passee || reposDe(s, blocId, exoId, i) ? `${stepper('repos', 'Repos après cette série (0 = aucun)', reposDe(s, blocId, exoId, i)?.reel || 0, 10, 's')}` : ''}
       <button class="btn btn-principal btn-large">${v.fait ? 'Enregistrer' : 'Valider la série'}</button>
       <div class="actions-sec">
         ${v.fait ? '<button type="button" class="lien" data-f="defaire">Marquer non faite</button>' : ''}
@@ -1214,6 +1241,7 @@ function fenetreSerie(s, blocId, exoId, i) {
     </form>`, (fd) => {
     if (!v.fait) v.faitA = Date.now();
     Object.assign(v, lireMesure(fd, e.mesure), { fait: true });
+    if (fd.has('repos')) saisirRepos(s, blocId, exoId, i, Math.max(0, Math.round(num(fd.get('repos')))));
     s.dernierBloc = blocId;
     if (!s.debut) S.lancer(s);
     S.enregistrer(); fermer(); vueSeance();
@@ -1314,15 +1342,15 @@ function fenetreFin(s) {
   const restantes = b.series - b.faites;
   ouvrirFenetre(`
     <form>
-      <h2>Terminer la séance</h2>
+      <h2>${s.edition ? 'Enregistrer les modifications' : 'Terminer la séance'}</h2>
       ${restantes ? `<p class="aide">${restantes} série${restantes > 1 ? 's' : ''} non validée${restantes > 1 ? 's' : ''} : elle${restantes > 1 ? 's' : ''} ne compte${restantes > 1 ? 'nt' : ''} pas.</p>` : ''}
       <p class="titre-choix">Ressenti</p>
       <div class="choix ressenti" data-groupe>
-        <input type="hidden" name="ressenti" value="">
-        ${Array.from({ length: 10 }, (_, i) => `<button type="button" class="puce" data-choix="${i + 1}">${i + 1}</button>`).join('')}
+        <input type="hidden" name="ressenti" value="${s.ressenti || ''}">
+        ${Array.from({ length: 10 }, (_, i) => `<button type="button" class="puce ${s.ressenti === i + 1 ? 'choisi' : ''}" data-choix="${i + 1}">${i + 1}</button>`).join('')}
       </div>
       <div class="ressenti-legende"><span>KO</span><span>En forme</span></div>
-      <label class="champ"><span>Note</span><textarea name="note" rows="2" placeholder="Fatigué, machine prise…"></textarea></label>
+      <label class="champ"><span>Note</span><textarea name="note" rows="2" placeholder="Fatigué, machine prise…">${esc(s.note || '')}</textarea></label>
       <button class="btn btn-principal btn-large">Enregistrer la séance</button>
     </form>`, (fd) => {
     if (s.chrono) basculerChrono();
@@ -1352,7 +1380,7 @@ function fenetreMenuSeance(s) {
       <button class="btn" data-f="deplier">Tout déplier</button>
     </div>
     <p class="aide">Pour changer l'ordre des blocs, attrape la poignée ⠿ à gauche d'un bloc.</p>
-    <div class="actions-sec"><button class="lien danger" data-f="abandon">${s.debut ? 'Abandonner la séance' : 'Fermer sans démarrer'}</button></div>`);
+    <div class="actions-sec"><button class="lien danger" data-f="abandon">${s.edition ? 'Annuler les modifications' : s.debut ? 'Abandonner la séance' : 'Fermer sans démarrer'}</button></div>`);
   const tous = (v) => () => { s.blocs.forEach((b) => { b.replie = v; }); S.enregistrer(); fermer(); vueSeance(); };
   couche.querySelector('[data-f="date"]').onclick = () => fenetreDate(s, vueSeance);
   const mo = couche.querySelector('[data-f="modele"]');
@@ -1360,6 +1388,7 @@ function fenetreMenuSeance(s) {
   couche.querySelector('[data-f="replier"]').onclick = tous(true);
   couche.querySelector('[data-f="deplier"]').onclick = tous(false);
   couche.querySelector('[data-f="abandon"]').onclick = (ev) => {
+    if (s.edition) { const id = s.id; S.annulerEdition(s); fermer(); toast('Modifications annulées'); return aller(`#/recap/${id}`); }
     if (!s.debut || confirmerDeux(ev.currentTarget)) { S.abandonner(s); fermer(); aller(`#/p/${s.programmeId}`); }
   };
 }
@@ -1440,12 +1469,17 @@ app.addEventListener('click', (ev) => {
       return;
     case 'recap': return aller(`#/recap/${d.id}`);
     case 'activite': return fenetreActivite(d.id ? S.activite(d.id) : null);
+    case 'modifier-seance': {
+      const se = S.seance(d.id);
+      if (!S.rouvrirSeance(se)) return toast("Termine d'abord la séance en cours");
+      return aller('#/seance');
+    }
     case 'dater': { const se = S.seance(d.id); return fenetreDate(se, () => vueRecap(se)); }
     case 'programmes': return aller('#/programmes');
     case 'ouvrir-programme': return aller(`#/p/${d.id}`);
     case 'configurer': retourConfig = 'programme'; return aller(`#/programme/${d.id}`);
     case 'stats': return aller(`#/stats/${d.id}`);
-    case 'calendrier': calMode = null; calMois = null; return aller(`#/calendrier/${d.id}`);
+    case 'calendrier': calMode = null; calMois = null; S.synchroniserPlan(S.programme(d.id)); return aller(`#/calendrier/${d.id}`);
     case 'cal-mode': {
       calMode = calMode === d.mode ? null : d.mode;
       return vueCalendrier(S.programme(location.hash.split('/')[2]));
@@ -1570,6 +1604,7 @@ app.addEventListener('click', (ev) => {
     }
     case 'ajouter-exo': return fenetreAjout(s);
     case 'terminer': return fenetreFin(s);
+    case 'annuler-edition': { const pid = s.programmeId, id = s.id; S.annulerEdition(s); toast('Modifications annulées'); void pid; return aller(`#/recap/${id}`); }
   }
 });
 
