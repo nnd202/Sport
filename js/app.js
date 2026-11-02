@@ -29,14 +29,9 @@ const I = {
 // Palettes à l'essai : toujours en nuances (dégradé), jamais en aplat.
 const COULEURS = {
   C1: { nom: 'Lagon', a: '#62d2c4', b: '#2b97b3' },
-  C2: { nom: 'Menthe', a: '#8edbb0', b: '#36a383' },
-  C3: { nom: 'Océan', a: '#7fb6f2', b: '#3a72d0' },
-  C4: { nom: 'Sauge', a: '#b2d3b0', b: '#5f977a' },
-  C5: { nom: 'Glacier', a: '#a6dcea', b: '#4a95bd' },
   C6: { nom: 'Pétrole', a: '#5cbcb0', b: '#226b7a' },
 };
 
-let reorganiser = false;
 let recapAOuvrir = null;
 const couleur = () => (COULEURS[S.get().reglages.couleur] ? S.get().reglages.couleur : 'C1');
 const appliquerCouleur = () => { document.documentElement.dataset.couleur = couleur(); };
@@ -82,7 +77,6 @@ function joursDepuis(iso) {
 }
 
 function vueAccueil() {
-  reorganiser = false;
   gererVeille();
   flottant.innerHTML = '';
   const p = S.programmeEnCours();
@@ -90,29 +84,30 @@ function vueAccueil() {
   const enCours = S.seanceEnCours();
 
   app.innerHTML = `
-    <header class="entete">
-      <h1>Sport</h1>
-      <button class="btn-icone" data-action="sauvegarder" aria-label="Sauvegarder">${I.partage}</button>
+    <header class="bandeau-tete">
+      <div class="bandeau-ligne">
+        <div class="bandeau-titre"><small>Programme en cours</small><h1>${esc(p.nom)}</h1></div>
+        <button class="btn-icone sur-couleur" data-action="sauvegarder" aria-label="Sauvegarder">${I.partage}</button>
+      </div>
+      <div class="bandeau-chiffres">
+        <span><b>${faites.length}</b> séance${faites.length > 1 ? 's' : ''}</span>
+        <span>${p.debut ? `depuis le ${dateCourte(p.debut)}` : 'pas encore commencé'}</span>
+      </div>
     </header>
 
     ${enCours ? `
-      <button class="encours" data-action="reprendre">
+      <button class="encours" data-action="reprendre" style="--c:${enCours.couleur}">
         <span class="encours-texte"><small>${enCours.debut ? 'Séance en cours' : 'Séance ouverte, pas commencée'}</small><strong>${esc(enCours.nom)}</strong></span>
-        <span class="encours-temps" data-temps-seance>${enCours.debut ? duree((Date.now() - new Date(enCours.debut)) / 1000) : 'Ouvrir'}</span>
+        <span class="encours-temps" data-temps-seance>${enCours.debut ? duree((Date.now() - new Date(enCours.debut)) / 1000) : 'Reprendre'}</span>
       </button>` : ''}
 
-    <section class="programme">
-      <div><small>Programme en cours</small><h2>${esc(p.nom)}</h2></div>
-      <div class="programme-chiffres"><strong>${faites.length}</strong><small>séance${faites.length > 1 ? 's' : ''}${p.debut ? ` depuis le ${dateCourte(p.debut)}` : ''}</small></div>
-    </section>
-
     <h3 class="titre-section">Splits</h3>
-    <ul class="pool" data-pool>
+    <ul class="pool" data-liste="splits">
       ${p.splits.map((sp) => {
         const der = S.derniereDuSplit(p.id, sp.id);
         const j = der ? joursDepuis(der.date) : null;
         return `
-        <li class="split" data-split-id="${sp.id}" style="--c:${sp.couleur}">
+        <li class="split" data-id="${sp.id}" style="--c:${sp.couleur}">
           <span class="poignee" data-glisser aria-label="Déplacer">${I.poignee}</span>
           <span class="split-texte">
             <strong>${esc(sp.nom)}</strong>
@@ -152,61 +147,91 @@ function vueAccueil() {
   }
 }
 
-// Glisser-déposer des splits : on attrape la poignée, on lâche à la nouvelle place.
+// Glisser-déposer aimanté (splits de l'accueil et blocs de la séance).
+// Les écouteurs sont sur la fenêtre : déplacer l'élément dans la page ne coupe pas le geste.
 function activerGlisser(ev) {
   const poignee = ev.target.closest('[data-glisser]');
   if (!poignee) return;
-  const li = poignee.closest('li');
-  const liste = li.parentElement;
+  const item = poignee.closest('[data-id]');
+  const liste = item?.parentElement;
+  if (!liste?.dataset.liste) return;
   ev.preventDefault();
-  poignee.setPointerCapture(ev.pointerId);
-  li.classList.add('glisse');
+  item.classList.add('glisse');
+  document.body.classList.add('en-glisse');
   let ty = 0;
-  // Centre de la carte sans le décalage visuel en cours.
-  const centre = () => { const r = li.getBoundingClientRect(); return r.top - ty + r.height / 2; };
+  const centre = () => { const r = item.getBoundingClientRect(); return r.top - ty + r.height / 2; };
   const ecart = ev.clientY - centre();
+  let derniereY = ev.clientY;
+  let defile = 0;
 
-  const suivre = (e) => {
-    const doigt = e.clientY - ecart;
+  const placer = (y) => {
+    const doigt = y - ecart;
     const voisins = [...liste.children];
-    const i = voisins.indexOf(li);
+    const i = voisins.indexOf(item);
     const prec = voisins[i - 1], suiv = voisins[i + 1];
-    const echange = (fn) => {
-      const avant = new Map(voisins.filter((x) => x !== li).map((x) => [x, x.getBoundingClientRect().top]));
+    const animer = (fn) => {
+      const avant = new Map(voisins.filter((x) => x !== item).map((x) => [x, x.getBoundingClientRect().top]));
       fn();
       for (const [x, t] of avant) {
         const d = t - x.getBoundingClientRect().top;
         if (!d) continue;
         x.style.transition = 'none';
         x.style.transform = `translateY(${d}px)`;
-        requestAnimationFrame(() => { x.style.transition = 'transform .18s ease'; x.style.transform = ''; });
+        x.getBoundingClientRect();
+        x.style.transition = 'transform .18s ease';
+        x.style.transform = '';
       }
     };
-    if (prec && doigt < prec.getBoundingClientRect().top + prec.offsetHeight / 2) echange(() => liste.insertBefore(li, prec));
-    else if (suiv && doigt > suiv.getBoundingClientRect().top + suiv.offsetHeight / 2) echange(() => liste.insertBefore(li, suiv.nextSibling));
+    if (prec && doigt < prec.getBoundingClientRect().top + prec.offsetHeight / 2) animer(() => liste.insertBefore(item, prec));
+    else if (suiv && doigt > suiv.getBoundingClientRect().top + suiv.offsetHeight / 2) animer(() => liste.insertBefore(item, suiv.nextSibling));
+    item.style.transition = 'none';
+    item.style.transform = '';
     ty = 0;
-    li.style.transform = '';
     ty = doigt - centre();
-    li.style.transform = `translateY(${ty}px)`;
+    item.style.transform = `translateY(${ty}px)`;
+  };
+  // Défilement automatique près des bords de l'écran.
+  const boucle = () => {
+    if (!defile) return;
+    window.scrollBy(0, defile);
+    placer(derniereY);
+    requestAnimationFrame(boucle);
+  };
+  const suivre = (e) => {
+    derniereY = e.clientY;
+    placer(e.clientY);
+    const h = window.innerHeight;
+    const avant = defile;
+    defile = e.clientY < 70 ? -8 : e.clientY > h - 110 ? 8 : 0;
+    if (defile && !avant) requestAnimationFrame(boucle);
   };
   const lacher = () => {
-    li.classList.remove('glisse');
-    li.style.transition = 'transform .15s ease';
-    li.style.transform = '';
-    setTimeout(() => { li.style.transition = ''; }, 160);
-    poignee.removeEventListener('pointermove', suivre);
-    poignee.removeEventListener('pointerup', lacher);
-    poignee.removeEventListener('pointercancel', lacher);
-    S.ordonnerSplits(S.programmeEnCours().id, [...liste.children].map((x) => x.dataset.splitId));
+    defile = 0;
+    window.removeEventListener('pointermove', suivre);
+    window.removeEventListener('pointerup', lacher);
+    window.removeEventListener('pointercancel', lacher);
+    item.style.transition = 'transform .16s ease';
+    item.style.transform = '';
+    setTimeout(() => {
+      item.classList.remove('glisse');
+      item.style.transition = '';
+      document.body.classList.remove('en-glisse');
+    }, 170);
+    const ids = [...liste.children].map((x) => x.dataset.id);
+    if (liste.dataset.liste === 'splits') S.ordonnerSplits(S.programmeEnCours().id, ids);
+    else {
+      const s = S.seanceEnCours();
+      s.blocs.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+      S.enregistrer();
+    }
   };
-  poignee.addEventListener('pointermove', suivre);
-  poignee.addEventListener('pointerup', lacher);
-  poignee.addEventListener('pointercancel', lacher);
+  window.addEventListener('pointermove', suivre, { passive: true });
+  window.addEventListener('pointerup', lacher);
+  window.addEventListener('pointercancel', lacher);
 }
 
 // --- Séance -------------------------------------------------------------------------
 
-const lettre = (i) => String.fromCharCode(65 + i);
 const actifs = (b) => b.exos.filter((e) => !e.remplacePar);
 function nbTours(b) { return Math.max(0, ...actifs(b).map((e) => e.series.length)); }
 function blocFini(b) { return actifs(b).every((e) => e.series.length && e.series.every((x) => x.fait)); }
@@ -218,13 +243,13 @@ function valeurs(e, s) {
   return `<span class="v v-kg"><b>${kg(s.kg ?? 0)}</b> kg</span><span class="v"><b>${s.reps ?? 0}</b> reps${u}</span>`;
 }
 
-function ligneSerie(b, e, si, prefixe) {
+function ligneSerie(b, e, si, numero) {
   const s = e.series[si];
   if (!s) return '';
   const change = s.prevu && texteSerie(e, s) !== texteSerie(e, s.prevu);
   return `
     <div class="serie ${s.fait ? 'faite' : ''}">
-      <span class="serie-num">${prefixe}</span>
+      <span class="serie-num">${numero}</span>
       <button class="serie-valeur" data-action="editer-serie" data-bloc="${b.id}" data-exo="${e.id}" data-i="${si}">
         ${valeurs(e, s)}${change ? '<span class="modifie" title="Différent du prévu"></span>' : ''}
       </button>
@@ -233,11 +258,25 @@ function ligneSerie(b, e, si, prefixe) {
     </div>`;
 }
 
+// Le chrono se rattache à la dernière série validée d'un bloc déplié.
+function ancreCourante(s) {
+  let meilleure = null;
+  for (const b of s.blocs) {
+    if (b.replie) continue;
+    for (const e of actifs(b)) e.series.forEach((x, i) => {
+      if (x.fait && x.faitA && (!meilleure || x.faitA > meilleure.t)) meilleure = { bloc: b.id, exo: e.id, i, t: x.faitA };
+    });
+  }
+  return meilleure;
+}
+
+const memeAncre = (a, b, e, si) => a && a.bloc === b.id && a.exo === e.id && a.i === si;
+
 function pastilleRepos(b, e, si) {
   const s = S.seanceEnCours();
   if (!s) return '';
-  const k = s.repos.findIndex((r) => r.ancre && r.ancre.bloc === b.id && r.ancre.exo === e.id && r.ancre.i === si);
-  if (s.chrono?.ancre && s.chrono.ancre.bloc === b.id && s.chrono.ancre.exo === e.id && s.chrono.ancre.i === si) return '<span class="repos-pastille en-cours">repos…</span>';
+  if (s.chrono && memeAncre(s.chrono.ancre, b, e, si)) return '<span class="repos-pastille en-cours">repos…</span>';
+  const k = s.repos.findIndex((r) => memeAncre(r.ancre, b, e, si));
   if (k < 0) return '';
   const r = s.repos[k];
   return `<button class="repos-pastille ${r.reel > r.prevu ? 'long' : ''}" data-action="repos" data-k="${k}">${duree(r.reel)}</button>`;
@@ -254,49 +293,59 @@ function etiquettes(e, s) {
   return t.map((x) => `<span class="etiquette">${esc(x)}</span>`).join('');
 }
 
-function boutonsDeplacer(s, b, idx) {
-  return `<span class="deplacer">
-    <button class="btn-icone petit" data-action="monter" data-bloc="${b.id}" aria-label="Monter" ${idx === 0 ? 'disabled' : ''}>${I.haut}</button>
-    <button class="btn-icone petit" data-action="descendre" data-bloc="${b.id}" aria-label="Descendre" ${idx === s.blocs.length - 1 ? 'disabled' : ''}>${I.bas}</button>
-  </span>`;
+function resumeBloc(b) {
+  let faites = 0, total = 0, ton = 0;
+  for (const e of actifs(b)) for (const x of e.series) {
+    total++;
+    if (x.fait) { faites++; if (e.mesure === 'charge') ton += (x.kg || 0) * (x.reps || 0) * (e.uni ? 2 : 1); }
+  }
+  return `${faites}/${total}${ton ? ` · ${kg(Math.round(ton))} kg` : ''}`;
 }
 
-function carteBloc(s, b, idx) {
+function carteBloc(s, b) {
   const tous = s.blocs.flatMap((x) => x.exos);
+  const poignee = `<span class="poignee" data-glisser aria-label="Déplacer">${I.poignee}</span>`;
   if (!actifs(b).length) {
     return `
-    <article class="bloc remplace">
+    <article class="bloc remplace" data-id="${b.id}">
+      ${poignee}
       <p>${b.exos.map((e) => `<s>${esc(e.nom)}</s> → ${esc(tous.find((x) => x.id === e.remplacePar)?.nom || '')}`).join('<br>')}</p>
-      ${reorganiser ? boutonsDeplacer(s, b, idx) : ''}
     </article>`;
   }
   const exos = actifs(b);
   const multi = exos.length > 1;
-  const titres = exos.map((e, i) => `
+  const fini = blocFini(b);
+  const titres = exos.map((e) => `
     <div class="exo-titre">
-      ${multi ? `<span class="lettre">${lettre(i)}</span>` : ''}
       <button class="exo-nom" data-action="editer-exo" data-bloc="${b.id}" data-exo="${e.id}">${esc(e.nom)}</button>
-      ${etiquettes(e, s)}
+      ${b.replie ? '' : etiquettes(e, s)}
     </div>
-    ${e.note ? `<p class="exo-note">${esc(e.note)}</p>` : ''}`).join('');
+    ${e.note && !b.replie ? `<p class="exo-note">${esc(e.note)}</p>` : ''}`).join('');
 
-  const series = reorganiser ? '' : multi
-    ? Array.from({ length: nbTours(b) }, (_, t) => `<div class="tour">${exos.map((e, i) => ligneSerie(b, e, t, `${t + 1}${lettre(i)}`)).join('')}</div>`).join('')
-    : exos[0].series.map((_, i) => ligneSerie(b, exos[0], i, i + 1)).join('');
+  const tete = `
+    <div class="bloc-tete">
+      ${poignee}
+      <div class="bloc-titres">${titres}</div>
+      <button class="bloc-plier" data-action="plier" data-bloc="${b.id}" aria-label="${b.replie ? 'Déplier' : 'Replier'}" aria-expanded="${!b.replie}">
+        ${b.replie ? `<span class="bloc-resume ${fini ? 'fini' : ''}">${fini ? I.check : ''}${resumeBloc(b)}</span>` : `<span class="bloc-repos">${I.chrono}${duree(b.repos)}</span>`}
+        <span class="chevron">${b.replie ? I.bas : I.haut}</span>
+      </button>
+    </div>`;
+
+  if (b.replie) return `<article class="bloc replie ${fini ? 'fini' : ''}" data-id="${b.id}">${tete}</article>`;
+
+  const series = multi
+    ? Array.from({ length: nbTours(b) }, (_, t) => `<div class="tour">${exos.map((e, i) => ligneSerie(b, e, t, i === 0 ? t + 1 : '')).join('')}</div>`).join('')
+    : `<div class="tour">${exos[0].series.map((_, i) => ligneSerie(b, exos[0], i, i + 1)).join('')}</div>`;
 
   return `
-    <article class="bloc ${blocFini(b) ? 'fini' : ''}">
-      <div class="bloc-tete">
-        <div class="bloc-titres">${titres}</div>
-        <span class="bloc-repos">${I.chrono}${duree(b.repos)}</span>
-        ${reorganiser ? boutonsDeplacer(s, b, idx) : ''}
+    <article class="bloc ${multi ? 'multi' : ''}" data-id="${b.id}">
+      ${tete}
+      <div class="series">${series}</div>
+      <div class="bloc-pied">
+        <button data-action="retirer-serie" data-bloc="${b.id}">${I.moins} série</button>
+        <button data-action="ajouter-serie" data-bloc="${b.id}">${I.plus} série</button>
       </div>
-      ${reorganiser ? '' : `
-        <div class="series">${series}</div>
-        <div class="bloc-pied">
-          <button class="lien" data-action="retirer-serie" data-bloc="${b.id}">${I.moins} série</button>
-          <button class="lien" data-action="ajouter-serie" data-bloc="${b.id}">${I.plus} série</button>
-        </div>`}
     </article>`;
 }
 
@@ -307,29 +356,25 @@ function vueSeance() {
   const b = bilan(s);
   const r = S.get().reglages;
   app.innerHTML = `
-    <header class="entete seance-tete" style="--c:${s.couleur}">
-      <button class="btn-icone" data-action="accueil" aria-label="Accueil">${I.retour}</button>
-      <div class="seance-titre">
-        <h1>${esc(s.nom)}</h1>
-        <small>${s.debut ? `${dateCourte(s.date)} · <span data-temps-seance>${duree(b.dureeSec)}</span>` : 'Pas commencée'}</small>
+    <header class="bandeau-tete seance" style="--c:${s.couleur}">
+      <div class="bandeau-ligne">
+        <button class="btn-icone sur-couleur" data-action="accueil" aria-label="Accueil">${I.retour}</button>
+        <div class="bandeau-titre"><h1>${esc(s.nom)}</h1>
+          <small>${s.debut ? `${dateCourte(s.date)} · <span data-temps-seance>${duree(b.dureeSec)}</span>` : 'Pas commencée'}</small></div>
+        <button class="btn-icone sur-couleur ${r.antiVeille ? 'actif' : ''}" data-action="veille" aria-label="Garder l'écran allumé" aria-pressed="${r.antiVeille}">${I.ecran}</button>
+        <button class="btn-icone sur-couleur" data-action="menu-seance" aria-label="Plus d'actions">${I.menu}</button>
       </div>
-      <button class="btn-icone ${r.antiVeille ? 'actif' : ''}" data-action="veille" aria-label="Garder l'écran allumé" aria-pressed="${r.antiVeille}">${I.ecran}</button>
-      <button class="btn-icone" data-action="menu-seance" aria-label="Plus d'actions">${I.menu}</button>
+      ${s.debut ? `
+        <div class="progression"><span style="width:${b.series ? (b.faites / b.series) * 100 : 0}%"></span></div>
+        <div class="bandeau-chiffres"><span><b>${b.faites}</b>/${b.series} séries</span><span><b>${kg(Math.round(b.tonnage))}</b> kg</span></div>`
+      : `<button class="btn-demarrer" data-action="lancer">${I.play} Démarrer la séance</button>`}
     </header>
+    ${s.debut ? '' : '<p class="aide centre">Ajuste ce que tu veux avant : le temps ne part qu\'au démarrage.</p>'}
 
-    ${s.debut ? `
-      <div class="progression"><span style="width:${b.series ? (b.faites / b.series) * 100 : 0}%"></span></div>
-      <p class="resume-seance"><span><b>${b.faites}</b>/${b.series} séries</span><span><b>${kg(Math.round(b.tonnage))}</b> kg</span></p>`
-    : `<button class="btn btn-principal btn-large" data-action="lancer">${I.play} Démarrer la séance</button>
-       <p class="aide centre">Ajuste ce que tu veux avant : le temps ne part qu'au démarrage.</p>`}
+    <div class="blocs" data-liste="blocs">${s.blocs.map((bl) => carteBloc(s, bl)).join('')}</div>
 
-    ${reorganiser ? `<div class="bandeau">Change l'ordre avec les flèches.<button class="btn btn-petit btn-principal" data-action="fin-reorganiser">Terminé</button></div>` : ''}
-
-    <div class="blocs">${s.blocs.map((bl, i) => carteBloc(s, bl, i)).join('')}</div>
-
-    ${reorganiser ? '' : `
-      <button class="ajout" data-action="ajouter-exo">${I.plus} Ajouter un exercice</button>
-      ${s.debut ? '<button class="btn btn-principal btn-large" data-action="terminer">Terminer la séance</button>' : ''}`}
+    <button class="ajout" data-action="ajouter-exo">${I.plus} Ajouter un exercice</button>
+    ${s.debut ? '<button class="btn btn-principal btn-large" data-action="terminer">Terminer la séance</button>' : ''}
     <div class="espace-chrono"></div>`;
   dessinerChrono();
 }
@@ -346,9 +391,11 @@ function vueRecap(s) {
   const b = bilan(s);
   const tous = s.blocs.flatMap((x) => x.exos);
   app.innerHTML = `
-    <header class="entete seance-tete" style="--c:${s.couleur}">
-      <button class="btn-icone" data-action="accueil" aria-label="Accueil">${I.retour}</button>
-      <div class="seance-titre"><h1>${esc(s.nom)}</h1><small>${dateCourte(s.date)} · terminée</small></div>
+    <header class="bandeau-tete seance" style="--c:${s.couleur}">
+      <div class="bandeau-ligne">
+        <button class="btn-icone sur-couleur" data-action="accueil" aria-label="Accueil">${I.retour}</button>
+        <div class="bandeau-titre"><h1>${esc(s.nom)}</h1><small>${dateCourte(s.date)} · terminée</small></div>
+      </div>
     </header>
     <div class="tuiles">
       <div class="tuile"><small>Durée</small><strong>${dureeSeance(b.dureeSec)}</strong></div>
@@ -385,7 +432,8 @@ function blocCourant(s) {
 function dessinerChrono() {
   const s = S.seanceEnCours();
   if (!s || !location.hash.startsWith('#/seance')) { flottant.innerHTML = ''; return; }
-  const b = s.chrono ? s.blocs.find((x) => x.id === s.chrono.blocId) : (s.ancre ? s.blocs.find((x) => x.id === s.ancre.bloc) : blocCourant(s));
+  const a = ancreCourante(s);
+  const b = s.chrono ? s.blocs.find((x) => x.id === s.chrono.blocId) : (a ? s.blocs.find((x) => x.id === a.bloc) : blocCourant(s));
   const marche = !!s.chrono;
   flottant.innerHTML = `
     <div class="chrono ${marche ? 'marche' : ''}">
@@ -413,7 +461,8 @@ function basculerChrono() {
       toast('Repos repris');
     } else {
       const b = blocCourant(s);
-      s.chrono = { depart: Date.now(), blocId: s.ancre?.bloc || b?.id || null, ancre: s.ancre || null };
+      const ancre = ancreCourante(s);
+      s.chrono = { depart: Date.now(), blocId: ancre?.bloc || b?.id || null, ancre };
     }
   } else {
     const reel = Math.round((Date.now() - s.chrono.depart) / 1000);
@@ -566,9 +615,9 @@ function fenetreSerie(s, blocId, exoId, i) {
         <button type="button" class="lien danger" data-f="supprimer">Retirer cette série</button>
       </div>
     </form>`, (fd) => {
+    if (!v.fait) v.faitA = Date.now();
     Object.assign(v, lireMesure(fd, e.mesure), { fait: true });
     s.dernierBloc = blocId;
-    s.ancre = { bloc: blocId, exo: exoId, i };
     if (!s.debut) S.lancer(s);
     S.enregistrer(); fermer(); vueSeance();
   });
@@ -578,7 +627,7 @@ function fenetreSerie(s, blocId, exoId, i) {
     toast('Série retirée');
   };
   const d = couche.querySelector('[data-f="defaire"]');
-  if (d) d.onclick = () => { v.fait = false; S.enregistrer(); fermer(); vueSeance(); };
+  if (d) d.onclick = () => { v.fait = false; delete v.faitA; S.enregistrer(); fermer(); vueSeance(); };
 }
 
 function choixMesure(actuelle) {
@@ -638,23 +687,19 @@ function fenetreAjout(s) {
     const nb = Math.max(1, Math.round(num(fd.get('nb'))));
     const exo = {
       id: uid('e'), src: null, nom: fd.get('nom').trim(), mesure, uni: fd.get('uni') === 'on', note: '',
-      series: Array.from({ length: nb }, () => ({ prevu: null, ...val, fait: true })),
+      series: Array.from({ length: nb }, () => ({ prevu: null, ...val, fait: true, faitA: Date.now() })),
     };
     const bloc = { id: uid('b'), src: null, repos: 60, exos: [exo] };
-    let pos;
     if (mode.startsWith('r:')) {
       exo.remplace = mode.slice(2);
       const cible = s.blocs.flatMap((b) => b.exos).find((x) => x.id === exo.remplace);
       if (cible) cible.remplacePar = exo.id;
-      pos = s.blocs.findIndex((b) => b.exos.some((x) => x.id === exo.remplace));
-      bloc.repos = s.blocs[pos]?.repos || 60;
+      bloc.repos = s.blocs.find((b) => b.exos.some((x) => x.id === exo.remplace))?.repos || 60;
     } else {
       exo.ponctuel = true;
-      pos = s.blocs.map((b) => b.exos.some((x) => x.series.some((y) => y.fait))).lastIndexOf(true);
     }
-    s.blocs.splice(pos + 1, 0, bloc);
+    s.blocs.push(bloc);
     s.dernierBloc = bloc.id;
-    s.ancre = { bloc: bloc.id, exo: exo.id, i: exo.series.length - 1 };
     if (!s.debut) S.lancer(s);
     S.enregistrer(); fermer(); vueSeance();
     toast(exo.remplace ? 'Ajouté en remplacement' : 'Ajouté en plus');
@@ -685,7 +730,6 @@ function fenetreFin(s) {
     </form>`, (fd) => {
     if (s.chrono) basculerChrono();
     S.terminer(s, { ressenti: parseInt(fd.get('ressenti'), 10) || null, note: fd.get('note').trim() });
-    reorganiser = false;
     recapAOuvrir = s.id;
     aller('#/');
   });
@@ -704,9 +748,15 @@ function confirmerDeux(btn) {
 function fenetreMenuSeance(s) {
   ouvrirFenetre(`
     <h2>${esc(s.nom)}</h2>
-    <button class="btn btn-large" data-f="reorg">Réorganiser les blocs</button>
+    <div class="deux">
+      <button class="btn" data-f="replier">Tout replier</button>
+      <button class="btn" data-f="deplier">Tout déplier</button>
+    </div>
+    <p class="aide">Pour changer l'ordre des blocs, attrape la poignée ⠿ à gauche d'un bloc.</p>
     <div class="actions-sec"><button class="lien danger" data-f="abandon">${s.debut ? 'Abandonner la séance' : 'Fermer sans démarrer'}</button></div>`);
-  couche.querySelector('[data-f="reorg"]').onclick = () => { reorganiser = true; fermer(); vueSeance(); };
+  const tous = (v) => () => { s.blocs.forEach((b) => { b.replie = v; }); S.enregistrer(); fermer(); vueSeance(); };
+  couche.querySelector('[data-f="replier"]').onclick = tous(true);
+  couche.querySelector('[data-f="deplier"]').onclick = tous(false);
   couche.querySelector('[data-f="abandon"]').onclick = (ev) => {
     if (!s.debut || confirmerDeux(ev.currentTarget)) { S.abandonner(s); fermer(); aller('#/'); }
   };
@@ -776,13 +826,9 @@ app.addEventListener('click', (ev) => {
       return vueSeance();
     }
     case 'menu-seance': return fenetreMenuSeance(s);
-    case 'fin-reorganiser': reorganiser = false; return vueSeance();
-    case 'monter':
-    case 'descendre': {
-      const i = s.blocs.findIndex((b) => b.id === d.bloc);
-      const j = d.action === 'monter' ? i - 1 : i + 1;
-      if (j < 0 || j >= s.blocs.length) return;
-      [s.blocs[i], s.blocs[j]] = [s.blocs[j], s.blocs[i]];
+    case 'plier': {
+      const b = s.blocs.find((x) => x.id === d.bloc);
+      b.replie = !b.replie;
       S.enregistrer();
       return vueSeance();
     }
@@ -790,7 +836,7 @@ app.addEventListener('click', (ev) => {
       const { e } = trouver(s, d.bloc, d.exo);
       const v = e.series[+d.i];
       v.fait = !v.fait;
-      if (v.fait) { s.dernierBloc = d.bloc; s.ancre = { bloc: d.bloc, exo: d.exo, i: +d.i }; if (!s.debut) S.lancer(s); }
+      if (v.fait) { v.faitA = Date.now(); s.dernierBloc = d.bloc; if (!s.debut) S.lancer(s); } else delete v.faitA;
       S.enregistrer();
       return vueSeance();
     }
