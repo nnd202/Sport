@@ -4,6 +4,8 @@ import { nouvelleSeance, aujourdhui, uid, bilan } from './calc.js';
 
 const CLE = 'sport-etat';
 let etat = charger();
+// Ancienne version : une modification occupait la place de la séance en cours.
+if (etat.encours && etat.seances?.find((x) => x.id === etat.encours)?.edition) { etat.edition = etat.encours; etat.encours = null; }
 
 function vierge() {
   return { version: 1, programmes: [programmeDemo()], seances: [], activites: [], encours: null, reglages: { antiVeille: false, couleur: 'C1' } };
@@ -70,7 +72,7 @@ export function terminer(s, { ressenti, note }) {
     // Modification d'une séance déjà terminée : les dates restent.
     delete s.edition;
     s.ressenti = ressenti; s.note = note || ''; s.chrono = null;
-    etat.encours = null; delete etat.copieEdition;
+    etat.edition = null; delete etat.copieEdition;
     enregistrer();
     return;
   }
@@ -279,12 +281,18 @@ export function appliquerPlan(p) {
 
 // --- Modifier une séance terminée -------------------------------------------------------
 
+export const seanceEdition = () => (etat.edition ? seance(etat.edition) : null);
+
+/** Ouvre une séance terminée en modification, à part de la séance en cours (temps arrêté). */
 export function rouvrirSeance(s) {
-  if (etat.encours) return false;
-  etat.copieEdition = JSON.stringify(s);
-  s.edition = true;
-  s.blocs.forEach((b) => { b.replie = true; });
-  etat.encours = s.id;
+  const autre = seanceEdition();
+  if (autre && autre !== s) annulerEdition(autre);
+  if (!s.edition) {
+    etat.copieEdition = JSON.stringify(s);
+    s.edition = true;
+    s.blocs.forEach((b) => { b.replie = true; });
+  }
+  etat.edition = s.id;
   enregistrer();
   return true;
 }
@@ -293,6 +301,6 @@ export function annulerEdition(s) {
   const i = etat.seances.findIndex((x) => x.id === s.id);
   if (i >= 0 && etat.copieEdition) etat.seances[i] = JSON.parse(etat.copieEdition);
   delete etat.copieEdition;
-  etat.encours = null;
+  etat.edition = null;
   enregistrer();
 }

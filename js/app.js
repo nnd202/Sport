@@ -46,6 +46,8 @@ const COULEURS = {
 };
 
 let recapAOuvrir = null;
+// Séance affichée : la modification d'une séance passée (#/edition) ou la séance en cours.
+const active = () => (location.hash.startsWith('#/edition') ? S.seanceEdition() : S.seanceEnCours());
 let retourConfig = 'programme';
 const couleur = () => 'C1';
 const appliquerCouleur = () => { document.documentElement.dataset.couleur = couleur(); };
@@ -75,6 +77,7 @@ function route() {
   fermer();
   const h = location.hash || '#/';
   if (h.startsWith('#/seance') && S.seanceEnCours()) return vueSeance();
+  if (h.startsWith('#/edition') && S.seanceEdition()) return vueSeance();
   const m = h.match(/^#\/recap\/(.+)$/);
   if (m && S.seance(m[1])) return vueRecap(S.seance(m[1]));
   if (h === '#/programmes') return vueProgrammes();
@@ -439,7 +442,7 @@ function activerGlisser(ev) {
       trier(S.programme(liste.dataset.programme).splits.find((x) => x.id === liste.dataset.split).blocs);
       S.enregistrer();
     } else {
-      const s = S.seanceEnCours();
+      const s = active();
       s.blocs.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
       S.enregistrer();
     }
@@ -986,7 +989,7 @@ function ancreCourante(s) {
 const memeAncre = (a, b, e, si) => a && a.bloc === b.id && a.exo === e.id && a.i === si;
 
 function pastilleRepos(b, e, si) {
-  const s = S.seanceEnCours();
+  const s = active();
   if (!s) return '';
   if (s.chrono && memeAncre(s.chrono.ancre, b, e, si)) return '<span class="repos-pastille en-cours">repos…</span>';
   const k = s.repos.findIndex((r) => memeAncre(r.ancre, b, e, si));
@@ -1063,7 +1066,7 @@ function carteBloc(s, b) {
 }
 
 function vueSeance() {
-  const s = S.seanceEnCours();
+  const s = active();
   if (!s) return aller('#/');
   gererVeille();
   const b = bilan(s);
@@ -1071,7 +1074,7 @@ function vueSeance() {
   app.innerHTML = `
     <header class="bandeau-tete seance" style="--c:${s.couleur}">
       <div class="bandeau-ligne">
-        <button class="btn-icone sur-couleur" data-action="ouvrir-programme" data-id="${s.programmeId}" aria-label="Retour au programme">${I.retour}</button>
+        <button class="btn-icone sur-couleur" data-action="${s.edition ? 'recap' : 'ouvrir-programme'}" data-id="${s.edition ? s.id : s.programmeId}" aria-label="Retour">${I.retour}</button>
         <div class="bandeau-titre"><h1>${esc(s.nom)}</h1>
           <small>${s.edition ? `Modification · séance du ${dateCourte(s.date)}` : s.passee ? `Séance du ${dateCourte(s.date)}${S.heure(s.debut) !== '12:00' ? ` · ${S.heure(s.debut)}` : ''}` : s.debut ? `${dateCourte(s.date)} · <span data-temps-seance>${duree(b.dureeSec)}</span>` : 'Pas commencée'}</small></div>
         <button class="btn-icone sur-couleur ${r.antiVeille ? 'actif' : ''}" data-action="veille" aria-label="Garder l'écran allumé" aria-pressed="${r.antiVeille}">${I.ecran}</button>
@@ -1131,7 +1134,7 @@ function vueRecap(s) {
         </div>`;
       }).join('')).join('')}
     </div>
-    <button class="btn btn-large" data-action="modifier-seance" data-id="${s.id}">${I.crayon} Modifier cette séance</button>
+    <button class="btn btn-large ${s.edition ? 'btn-principal' : ''}" data-action="modifier-seance" data-id="${s.id}">${I.crayon} ${s.edition ? 'Reprendre la modification en cours' : 'Modifier cette séance'}</button>
     <div class="pied"><button class="lien danger" data-action="supprimer-seance" data-id="${s.id}">Supprimer cette séance</button></div>`;
   window.scrollTo(0, 0);
 }
@@ -1145,9 +1148,10 @@ function blocCourant(s) {
 }
 
 function dessinerChrono() {
-  const s = S.seanceEnCours();
+  const s = active();
   // Pas de chrono pour une séance saisie après coup : les repos se saisissent dans chaque série.
   if (!s || !location.hash.startsWith('#/seance') || s.edition || s.passee) { flottant.innerHTML = ''; return; }
+  // (la modification d'une séance passée n'a jamais de chrono)
   const a = ancreCourante(s);
   const b = s.chrono ? s.blocs.find((x) => x.id === s.chrono.blocId) : (a ? s.blocs.find((x) => x.id === a.bloc) : blocCourant(s));
   const marche = !!s.chrono;
@@ -1460,7 +1464,9 @@ function fenetreFin(s) {
       <button class="btn btn-principal btn-large">Enregistrer la séance</button>
     </form>`, (fd) => {
     if (s.chrono) basculerChrono();
+    const etaitEdition = !!s.edition;
     S.terminer(s, { ressenti: parseInt(fd.get('ressenti'), 10) || null, note: fd.get('note').trim() });
+    if (etaitEdition) { toast('Modifications enregistrées'); return aller(`#/recap/${s.id}`); }
     recapAOuvrir = s.id;
     aller(`#/p/${s.programmeId}`);
   });
@@ -1557,7 +1563,7 @@ app.addEventListener('pointerdown', activerGlisser);
 app.addEventListener('click', (ev) => {
   const el = ev.target.closest('[data-action]');
   if (!el) return;
-  const s = S.seanceEnCours();
+  const s = active();
   const d = el.dataset;
   switch (d.action) {
     case 'accueil': return aller('#/');
@@ -1577,8 +1583,8 @@ app.addEventListener('click', (ev) => {
     case 'activite': return fenetreActivite(d.id ? S.activite(d.id) : null);
     case 'modifier-seance': {
       const se = S.seance(d.id);
-      if (!S.rouvrirSeance(se)) return toast("Termine d'abord la séance en cours");
-      return aller('#/seance');
+      S.rouvrirSeance(se);
+      return aller('#/edition');
     }
     case 'dater': { const se = S.seance(d.id); return fenetreDate(se, () => vueRecap(se)); }
     case 'programmes': return aller('#/programmes');
