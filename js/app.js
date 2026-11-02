@@ -171,8 +171,19 @@ function activerGlisser(ev) {
     const voisins = [...liste.children];
     const i = voisins.indexOf(li);
     const prec = voisins[i - 1], suiv = voisins[i + 1];
-    if (prec && doigt < prec.getBoundingClientRect().top + prec.offsetHeight / 2) liste.insertBefore(li, prec);
-    else if (suiv && doigt > suiv.getBoundingClientRect().top + suiv.offsetHeight / 2) liste.insertBefore(li, suiv.nextSibling);
+    const echange = (fn) => {
+      const avant = new Map(voisins.filter((x) => x !== li).map((x) => [x, x.getBoundingClientRect().top]));
+      fn();
+      for (const [x, t] of avant) {
+        const d = t - x.getBoundingClientRect().top;
+        if (!d) continue;
+        x.style.transition = 'none';
+        x.style.transform = `translateY(${d}px)`;
+        requestAnimationFrame(() => { x.style.transition = 'transform .18s ease'; x.style.transform = ''; });
+      }
+    };
+    if (prec && doigt < prec.getBoundingClientRect().top + prec.offsetHeight / 2) echange(() => liste.insertBefore(li, prec));
+    else if (suiv && doigt > suiv.getBoundingClientRect().top + suiv.offsetHeight / 2) echange(() => liste.insertBefore(li, suiv.nextSibling));
     ty = 0;
     li.style.transform = '';
     ty = doigt - centre();
@@ -180,7 +191,9 @@ function activerGlisser(ev) {
   };
   const lacher = () => {
     li.classList.remove('glisse');
+    li.style.transition = 'transform .15s ease';
     li.style.transform = '';
+    setTimeout(() => { li.style.transition = ''; }, 160);
     poignee.removeEventListener('pointermove', suivre);
     poignee.removeEventListener('pointerup', lacher);
     poignee.removeEventListener('pointercancel', lacher);
@@ -215,8 +228,19 @@ function ligneSerie(b, e, si, prefixe) {
       <button class="serie-valeur" data-action="editer-serie" data-bloc="${b.id}" data-exo="${e.id}" data-i="${si}">
         ${valeurs(e, s)}${change ? '<span class="modifie" title="Différent du prévu"></span>' : ''}
       </button>
+      ${pastilleRepos(b, e, si)}
       <button class="coche" data-action="cocher" data-bloc="${b.id}" data-exo="${e.id}" data-i="${si}" aria-label="Valider la série">${I.check}</button>
     </div>`;
+}
+
+function pastilleRepos(b, e, si) {
+  const s = S.seanceEnCours();
+  if (!s) return '';
+  const k = s.repos.findIndex((r) => r.ancre && r.ancre.bloc === b.id && r.ancre.exo === e.id && r.ancre.i === si);
+  if (s.chrono?.ancre && s.chrono.ancre.bloc === b.id && s.chrono.ancre.exo === e.id && s.chrono.ancre.i === si) return '<span class="repos-pastille en-cours">repos…</span>';
+  if (k < 0) return '';
+  const r = s.repos[k];
+  return `<button class="repos-pastille ${r.reel > r.prevu ? 'long' : ''}" data-action="repos" data-k="${k}">${duree(r.reel)}</button>`;
 }
 
 function etiquettes(e, s) {
@@ -361,32 +385,77 @@ function blocCourant(s) {
 function dessinerChrono() {
   const s = S.seanceEnCours();
   if (!s || !location.hash.startsWith('#/seance')) { flottant.innerHTML = ''; return; }
-  const b = blocCourant(s);
+  const b = s.chrono ? s.blocs.find((x) => x.id === s.chrono.blocId) : (s.ancre ? s.blocs.find((x) => x.id === s.ancre.bloc) : blocCourant(s));
   const marche = !!s.chrono;
   flottant.innerHTML = `
     <div class="chrono ${marche ? 'marche' : ''}">
       <div class="chrono-info"><small>Repos</small><span>prévu ${duree(b?.repos || 0)}</span></div>
-      <div class="chrono-temps" data-chrono>${marche ? duree((Date.now() - s.chrono.depart) / 1000) : '0:00'}</div>
+      <div class="chrono-temps" data-chrono>${chronoTexte(marche ? Date.now() - s.chrono.depart : 0)}</div>
       <button class="chrono-btn" data-action="chrono" aria-label="${marche ? 'Arrêter' : 'Démarrer'} le chrono">${marche ? I.stop : I.play}</button>
     </div>`;
+  if (marche) requestAnimationFrame(boucleChrono);
 }
+
+// Garde-fous : un arrêt sous 5 s est ignoré (double toucher) ; relancer moins de 10 s
+// après un arrêt reprend le même repos (arrêt par erreur). Chaque repos est rattaché à la
+// série validée juste avant et s'affiche sous elle : une erreur se voit et se corrige.
+const MIN_REPOS = 5, REPRISE = 10;
 
 function basculerChrono() {
   const s = S.seanceEnCours();
   if (!s) return;
   if (!s.debut) { S.lancer(s); vueSeance(); }
   if (!s.chrono) {
-    s.chrono = { depart: Date.now(), blocId: blocCourant(s)?.id || null };
+    const der = s.repos[s.repos.length - 1];
+    if (der && s.dernierArret && Date.now() - s.dernierArret < REPRISE * 1000 && der.depart) {
+      s.repos.pop();
+      s.chrono = { depart: der.depart, blocId: der.blocId, ancre: der.ancre };
+      toast('Repos repris');
+    } else {
+      const b = blocCourant(s);
+      s.chrono = { depart: Date.now(), blocId: s.ancre?.bloc || b?.id || null, ancre: s.ancre || null };
+    }
   } else {
     const reel = Math.round((Date.now() - s.chrono.depart) / 1000);
     const b = s.blocs.find((x) => x.id === s.chrono.blocId);
-    s.repos.push({ blocId: s.chrono.blocId, prevu: b?.repos || 0, reel, a: new Date().toISOString() });
+    if (reel < MIN_REPOS) {
+      toast('Moins de 5 s : pas enregistré');
+    } else {
+      s.repos.push({ blocId: s.chrono.blocId, ancre: s.chrono.ancre, depart: s.chrono.depart, prevu: b?.repos || 0, reel, a: new Date().toISOString() });
+      s.dernierArret = Date.now();
+    }
     s.chrono = null;
-    const ecart = reel - (b?.repos || 0);
-    toast(`Repos ${duree(reel)} · ${ecart > 0 ? `+${duree(ecart)}` : ecart < 0 ? `−${duree(-ecart)}` : 'pile'} sur le prévu`);
   }
   S.enregistrer();
-  dessinerChrono();
+  vueSeance();
+}
+
+function fenetreRepos(s, index) {
+  const r = s.repos[index];
+  const ecart = r.reel - r.prevu;
+  ouvrirFenetre(`
+    <h2>Repos ${duree(r.reel)} <small>prévu ${duree(r.prevu)}</small></h2>
+    <p class="aide">${ecart > 0 ? `${duree(ecart)} de plus que prévu.` : ecart < 0 ? `${duree(-ecart)} de moins que prévu.` : 'Pile le temps prévu.'} Supprime-le s'il vient d'une erreur de chrono : il ne comptera pas dans les stats.</p>
+    <button class="btn btn-large" data-f="ok">Garder</button>
+    <div class="actions-sec"><button class="lien danger" data-f="suppr">Supprimer ce repos</button></div>`);
+  couche.querySelector('[data-f="ok"]').onclick = fermer;
+  couche.querySelector('[data-f="suppr"]').onclick = () => { s.repos.splice(index, 1); s.dernierArret = null; S.enregistrer(); fermer(); vueSeance(); };
+}
+
+const chronoTexte = (ms) => {
+  const cs = Math.floor(ms / 10) % 100;
+  return `${duree(Math.floor(ms / 1000))}<span class="centiemes">,${String(cs).padStart(2, '0')}</span>`;
+};
+
+function boucleChrono() {
+  const s = S.seanceEnCours();
+  const c = document.querySelector('[data-chrono]');
+  if (!s?.chrono || !c) return;
+  const ms = Date.now() - s.chrono.depart;
+  c.innerHTML = chronoTexte(ms);
+  const b = s.blocs.find((x) => x.id === s.chrono.blocId);
+  c.classList.toggle('depasse', !!b && ms / 1000 > b.repos);
+  requestAnimationFrame(boucleChrono);
 }
 
 function tic() {
@@ -394,13 +463,6 @@ function tic() {
   if (!s || !s.debut) return;
   const t = duree((Date.now() - new Date(s.debut)) / 1000);
   document.querySelectorAll('[data-temps-seance]').forEach((el) => { el.textContent = t; });
-  const c = document.querySelector('[data-chrono]');
-  if (c && s.chrono) {
-    const ecoule = (Date.now() - s.chrono.depart) / 1000;
-    c.textContent = duree(ecoule);
-    const b = s.blocs.find((x) => x.id === s.chrono.blocId);
-    c.classList.toggle('depasse', !!b && ecoule > b.repos);
-  }
 }
 
 // --- Écran allumé (option) ----------------------------------------------------------
@@ -506,6 +568,7 @@ function fenetreSerie(s, blocId, exoId, i) {
     </form>`, (fd) => {
     Object.assign(v, lireMesure(fd, e.mesure), { fait: true });
     s.dernierBloc = blocId;
+    s.ancre = { bloc: blocId, exo: exoId, i };
     if (!s.debut) S.lancer(s);
     S.enregistrer(); fermer(); vueSeance();
   });
@@ -591,6 +654,7 @@ function fenetreAjout(s) {
     }
     s.blocs.splice(pos + 1, 0, bloc);
     s.dernierBloc = bloc.id;
+    s.ancre = { bloc: bloc.id, exo: exo.id, i: exo.series.length - 1 };
     if (!s.debut) S.lancer(s);
     S.enregistrer(); fermer(); vueSeance();
     toast(exo.remplace ? 'Ajouté en remplacement' : 'Ajouté en plus');
@@ -726,10 +790,11 @@ app.addEventListener('click', (ev) => {
       const { e } = trouver(s, d.bloc, d.exo);
       const v = e.series[+d.i];
       v.fait = !v.fait;
-      if (v.fait) { s.dernierBloc = d.bloc; if (!s.debut) S.lancer(s); }
+      if (v.fait) { s.dernierBloc = d.bloc; s.ancre = { bloc: d.bloc, exo: d.exo, i: +d.i }; if (!s.debut) S.lancer(s); }
       S.enregistrer();
       return vueSeance();
     }
+    case 'repos': return fenetreRepos(s, +d.k);
     case 'editer-serie': return fenetreSerie(s, d.bloc, d.exo, +d.i);
     case 'editer-exo': return fenetreExo(s, d.bloc, d.exo);
     case 'ajouter-serie': {
