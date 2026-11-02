@@ -91,6 +91,27 @@ function joursDepuis(iso) {
   return Math.round((new Date().setHours(12, 0, 0, 0) - new Date(`${iso}T12:00:00`)) / 864e5);
 }
 
+function ligneChronologie({ type, item }) {
+  if (type === 'seance') {
+    const b = bilan(item);
+    return `<li><button class="ligne-histo" data-action="recap" data-id="${item.id}" style="--c:${item.couleur}">
+      <span class="histo-texte"><strong>${esc(item.nom)}</strong><small>${dateCourte(item.date)} · ${dureeSeance(b.dureeSec)}${item.ressenti ? ` · ressenti ${item.ressenti}/10` : ''}</small></span>
+      <span class="histo-tonnage">${kg(Math.round(b.tonnage))} kg</span>
+    </button></li>`;
+  }
+  const a = item;
+  const infos = [a.distance && `${kg(a.distance)} km`, a.deplus && `${kg(a.deplus)} m D+`].filter(Boolean).join(' · ');
+  return `<li><button class="ligne-histo activite" data-action="activite" data-id="${a.id}">
+    <span class="histo-texte"><strong>${esc(a.nom)}</strong><small>${dateCourte(a.date)}${a.heureDebut && a.heureFin ? ` · ${dureeHeures(a.heureDebut, a.heureFin)}` : ''}${a.lieu ? ` · ${esc(a.lieu)}` : ''}${a.ressenti ? ` · ressenti ${a.ressenti}/10` : ''}</small></span>
+    <span class="histo-tonnage activite-infos">${infos || 'activité'}</span>
+  </button></li>`;
+}
+
+function dureeHeures(h1, h2) {
+  const [a, b] = [h1, h2].map((h) => { const [x, y] = h.split(':').map(Number); return x * 60 + y; });
+  return dureeSeance(Math.max(0, b - a) * 60);
+}
+
 function vueAccueil() {
   gererVeille();
   flottant.innerHTML = '';
@@ -111,6 +132,7 @@ function vueAccueil() {
     return;
   }
   const faites = S.seancesDe(p.id);
+  const chrono = S.chronologie(p);
 
   app.innerHTML = `
     <header class="bandeau-tete">
@@ -129,7 +151,7 @@ function vueAccueil() {
       <h3 class="titre-section">Séance en cours</h3>
       <button class="split encours" data-action="reprendre" style="--c:${enCours.couleur}">
         <span class="split-texte"><strong>${esc(enCours.nom)}</strong><small>${enCours.debut ? `${bilan(enCours).faites}/${bilan(enCours).series} séries · ${kg(Math.round(bilan(enCours).tonnage))} kg` : 'Ouverte, pas commencée'}</small></span>
-        <span class="encours-temps" data-temps-seance>${enCours.debut ? duree((Date.now() - new Date(enCours.debut)) / 1000) : 'Reprendre'}</span>
+        <span class="encours-temps" ${enCours.passee ? '' : 'data-temps-seance'}>${enCours.passee ? dateCourte(enCours.date) : enCours.debut ? duree((Date.now() - new Date(enCours.debut)) / 1000) : 'Reprendre'}</span>
       </button>` : ''}
 
     <h3 class="titre-section">Splits</h3>
@@ -150,16 +172,10 @@ function vueAccueil() {
       }).join('')}
     </ul>
 
-    <h3 class="titre-section">Séances terminées</h3>
-    ${faites.length ? `<ul class="historique">
-      ${faites.slice().reverse().map((s) => {
-        const b = bilan(s);
-        return `<li><button class="ligne-histo" data-action="recap" data-id="${s.id}" style="--c:${s.couleur}">
-          <span class="histo-texte"><strong>${esc(s.nom)}</strong><small>${dateCourte(s.date)} · ${dureeSeance(b.dureeSec)}${s.ressenti ? ` · ressenti ${s.ressenti}/10` : ''}</small></span>
-          <span class="histo-tonnage">${kg(Math.round(b.tonnage))} kg</span>
-        </button></li>`;
-      }).join('')}
-    </ul>` : '<p class="vide">Tes séances terminées apparaîtront ici.</p>'}
+    <div class="titre-ligne"><h3 class="titre-section">Séances et activités</h3>
+      <button class="lien petit" data-action="activite">${I.plus} Activité libre</button></div>
+    ${chrono.length ? `<ul class="historique">${chrono.slice().reverse().map(ligneChronologie).join('')}</ul>`
+      : '<p class="vide">Tes séances terminées et tes activités libres (rando, vélo…) apparaîtront ici, par date.</p>'}
 
     <div class="pied">
       <button class="lien discret" data-action="reinitialiser">Réinitialiser la démo</button>
@@ -259,6 +275,81 @@ function activerGlisser(ev) {
   window.addEventListener('pointercancel', lacher);
 }
 
+// --- Activités libres et dates --------------------------------------------------------
+
+const SUGGESTIONS = ['Rando', 'Vélo', 'Course', 'Balade', 'Natation', 'Cardio'];
+
+function choixRessenti(valeur) {
+  return `<div class="choix ressenti" data-groupe>
+    <input type="hidden" name="ressenti" value="${valeur || ''}">
+    ${Array.from({ length: 10 }, (_, i) => `<button type="button" class="puce ${valeur === i + 1 ? 'choisi' : ''}" data-choix="${i + 1}">${i + 1}</button>`).join('')}
+  </div>
+  <div class="ressenti-legende"><span>KO</span><span>En forme</span></div>`;
+}
+
+function fenetreActivite(a) {
+  const nouvelle = !a;
+  a = a || { nom: '', date: aujourdhui() };
+  ouvrirFenetre(`
+    <form>
+      <h2>${nouvelle ? 'Activité libre' : esc(a.nom)}</h2>
+      <label class="champ"><span>Activité</span><input name="nom" value="${esc(a.nom)}" required autocomplete="off" autocapitalize="sentences" placeholder="Rando"></label>
+      <div class="choix suggestions">${SUGGESTIONS.map((x) => `<button type="button" class="puce" data-suggestion="${x}">${x}</button>`).join('')}</div>
+      <label class="champ"><span>Date</span><input type="date" name="date" value="${a.date}" required></label>
+      <div class="deux">
+        <label class="champ"><span>Départ</span><input type="time" name="heureDebut" value="${a.heureDebut || ''}"></label>
+        <label class="champ"><span>Arrivée</span><input type="time" name="heureFin" value="${a.heureFin || ''}"></label>
+      </div>
+      <div class="deux">
+        <label class="champ"><span>Distance (km)</span><input name="distance" inputmode="decimal" value="${a.distance != null ? String(a.distance).replace('.', ',') : ''}"></label>
+        <label class="champ"><span>Dénivelé + (m)</span><input name="deplus" inputmode="numeric" value="${a.deplus ?? ''}"></label>
+      </div>
+      <label class="champ"><span>Lieu</span><input name="lieu" value="${esc(a.lieu || '')}" autocapitalize="sentences"></label>
+      <label class="champ"><span>Lien vers la trace</span><input type="url" name="lien" value="${esc(a.lien || '')}" placeholder="https://"></label>
+      ${a.lien ? `<a class="lien petit" href="${esc(a.lien)}" target="_blank" rel="noopener">Ouvrir la trace</a>` : ''}
+      <p class="titre-choix">Ressenti</p>
+      ${choixRessenti(a.ressenti)}
+      <label class="champ"><span>Note</span><textarea name="note" rows="2">${esc(a.note || '')}</textarea></label>
+      <button class="btn btn-principal btn-large">Enregistrer</button>
+      ${nouvelle ? '' : '<div class="actions-sec"><button type="button" class="lien danger" data-f="supprimer">Supprimer cette activité</button></div>'}
+    </form>`, (fd) => {
+    const n = (k) => { const v = String(fd.get(k) || '').trim(); return v ? num(v) : null; };
+    Object.assign(a, {
+      nom: majuscule(fd.get('nom')), date: fd.get('date'),
+      heureDebut: fd.get('heureDebut') || null, heureFin: fd.get('heureFin') || null,
+      distance: n('distance'), deplus: n('deplus') != null ? Math.round(n('deplus')) : null,
+      lieu: fd.get('lieu').trim(), lien: fd.get('lien').trim(),
+      ressenti: parseInt(fd.get('ressenti'), 10) || null, note: fd.get('note').trim(),
+    });
+    S.enregistrerActivite(a);
+    fermer(); route();
+    const pc = S.programmeEnCours();
+    toast(pc?.debut && a.date < pc.debut ? `Enregistrée, avant le début de ${pc.nom} : visible dans le programme précédent` : nouvelle ? 'Activité ajoutée' : 'Activité enregistrée');
+  });
+  const form = couche.querySelector('form');
+  form.querySelectorAll('[data-suggestion]').forEach((b) => { b.onclick = () => { form.elements.nom.value = b.dataset.suggestion; }; });
+  const sup = form.querySelector('[data-f="supprimer"]');
+  if (sup) sup.onclick = () => { if (confirmerDeux(sup)) { S.supprimerActivite(a.id); fermer(); route(); toast('Activité supprimée'); } };
+}
+
+function fenetreDate(s, apres) {
+  const terminee = !!s.fin && S.get().encours !== s.id;
+  ouvrirFenetre(`
+    <form>
+      <h2>Date de la séance</h2>
+      <p class="aide">${terminee ? 'La séance se range à cette date dans la chronologie.' : 'Pour saisir une séance faite un autre jour : choisis sa date, et ses heures si tu les connais.'}</p>
+      <label class="champ"><span>Date</span><input type="date" name="date" value="${s.date}" max="${aujourdhui()}" required></label>
+      <div class="deux">
+        <label class="champ"><span>Début</span><input type="time" name="debut" value="${s.passee || terminee ? S.heure(s.debut) : ''}"></label>
+        <label class="champ"><span>Fin</span><input type="time" name="fin" value="${(s.passee || terminee) && s.fin ? S.heure(s.fin) : ''}"></label>
+      </div>
+      <button class="btn btn-principal btn-large">Enregistrer</button>
+    </form>`, (fd) => {
+    S.dater(s, fd.get('date'), fd.get('debut') || null, fd.get('fin') || null);
+    fermer(); apres();
+  });
+}
+
 // --- Configuration : programmes ---------------------------------------------------
 
 const STATUTS = { 'en-cours': 'En cours', preparation: 'En préparation', termine: 'Terminé' };
@@ -350,7 +441,7 @@ function blocBilan(b) {
           ${x.nb ? `<span class="valeurs">${kg(Math.round(x.debut))} → ${kg(Math.round(x.fin))} kg</span>
             <span class="evolution ${x.evolution > 0 ? 'hausse' : x.evolution < 0 ? 'baisse' : ''}">${x.nb > 1 && x.evolution != null ? `${x.evolution > 0 ? '+' : ''}${Math.round(x.evolution * 100)} %` : '–'}</span>` : '<span class="valeurs">pas encore fait</span>'}
         </div>`).join('')}
-      <p class="anecdote">Total soulevé : ${kg(Math.round(b.tonnage / 100) / 10)} t</p>
+      <p class="anecdote">${b.activites ? `${b.activites} activité${b.activites > 1 ? 's' : ''} libre${b.activites > 1 ? 's' : ''} · ` : ''}Total soulevé : ${kg(Math.round(b.tonnage / 100) / 10)} t</p>
     </div>`;
 }
 
@@ -402,7 +493,7 @@ function fenetreBascule(p) {
   const ex = couche.querySelector('[data-f="export"]');
   if (ex) ex.onclick = () => {
     const fin = { ...ancien, fin: champ.value };
-    partagerFichier(X.nomDonnees(ancien), X.texteDonnees(fin, S.seancesDe(ancien.id), S.bilanProgramme(ancien, champ.value)));
+    partagerFichier(X.nomDonnees(ancien), X.texteDonnees(fin, S.seancesDe(ancien.id), S.bilanProgramme(ancien, champ.value), S.activitesDe(fin)));
   };
   if (ancien) champ.addEventListener('change', () => {
     couche.querySelector('[data-jours]').textContent = `${S.bilanProgramme(ancien, champ.value).jours} j`;
@@ -688,7 +779,7 @@ function vueSeance() {
       <div class="bandeau-ligne">
         <button class="btn-icone sur-couleur" data-action="accueil" aria-label="Accueil">${I.retour}</button>
         <div class="bandeau-titre"><h1>${esc(s.nom)}</h1>
-          <small>${s.debut ? `${dateCourte(s.date)} · <span data-temps-seance>${duree(b.dureeSec)}</span>` : 'Pas commencée'}</small></div>
+          <small>${s.passee ? `Séance du ${dateCourte(s.date)}${S.heure(s.debut) !== '12:00' ? ` · ${S.heure(s.debut)}` : ''}` : s.debut ? `${dateCourte(s.date)} · <span data-temps-seance>${duree(b.dureeSec)}</span>` : 'Pas commencée'}</small></div>
         <button class="btn-icone sur-couleur ${r.antiVeille ? 'actif' : ''}" data-action="veille" aria-label="Garder l'écran allumé" aria-pressed="${r.antiVeille}">${I.ecran}</button>
         <button class="btn-icone sur-couleur" data-action="menu-seance" aria-label="Plus d'actions">${I.menu}</button>
       </div>
@@ -722,7 +813,7 @@ function vueRecap(s) {
     <header class="bandeau-tete seance" style="--c:${s.couleur}">
       <div class="bandeau-ligne">
         <button class="btn-icone sur-couleur" data-action="accueil" aria-label="Accueil">${I.retour}</button>
-        <div class="bandeau-titre"><h1>${esc(s.nom)}</h1><small>${dateCourte(s.date)} · terminée</small></div>
+        <button class="bandeau-titre titre-modifiable" data-action="dater" data-id="${s.id}"><h1>${esc(s.nom)}</h1><small>${dateCourte(s.date)}${S.heure(s.debut) !== '12:00' ? ` · ${S.heure(s.debut)}` : ''} · terminée <span class="crayon">${I.crayon}</span></small></button>
       </div>
     </header>
     <div class="tuiles">
@@ -837,7 +928,7 @@ function boucleChrono() {
 
 function tic() {
   const s = S.seanceEnCours();
-  if (!s || !s.debut) return;
+  if (!s || !s.debut || s.passee) return;
   const t = duree((Date.now() - new Date(s.debut)) / 1000);
   document.querySelectorAll('[data-temps-seance]').forEach((el) => { el.textContent = t; });
 }
@@ -1076,6 +1167,7 @@ function confirmerDeux(btn) {
 function fenetreMenuSeance(s) {
   ouvrirFenetre(`
     <h2>${esc(s.nom)}</h2>
+    <button class="btn btn-large" data-f="date">${s.passee ? `Séance du ${dateCourte(s.date)} : modifier` : 'Saisir à une autre date'}</button>
     <div class="deux">
       <button class="btn" data-f="replier">Tout replier</button>
       <button class="btn" data-f="deplier">Tout déplier</button>
@@ -1083,6 +1175,7 @@ function fenetreMenuSeance(s) {
     <p class="aide">Pour changer l'ordre des blocs, attrape la poignée ⠿ à gauche d'un bloc.</p>
     <div class="actions-sec"><button class="lien danger" data-f="abandon">${s.debut ? 'Abandonner la séance' : 'Fermer sans démarrer'}</button></div>`);
   const tous = (v) => () => { s.blocs.forEach((b) => { b.replie = v; }); S.enregistrer(); fermer(); vueSeance(); };
+  couche.querySelector('[data-f="date"]').onclick = () => fenetreDate(s, vueSeance);
   couche.querySelector('[data-f="replier"]').onclick = tous(true);
   couche.querySelector('[data-f="deplier"]').onclick = tous(false);
   couche.querySelector('[data-f="abandon"]').onclick = (ev) => {
@@ -1155,7 +1248,7 @@ app.addEventListener('click', (ev) => {
     case 'reprendre': return aller('#/seance');
     case 'sauvegarder': return fenetreSauvegarde();
     case 'export-structure': { const pr = S.programme(d.id); return partagerFichier(X.nomStructure(pr), X.texteStructure(pr)); }
-    case 'export-donnees': { const pr = S.programme(d.id); return partagerFichier(X.nomDonnees(pr), X.texteDonnees(pr, S.seancesDe(pr.id), S.bilanProgramme(pr))); }
+    case 'export-donnees': { const pr = S.programme(d.id); return partagerFichier(X.nomDonnees(pr), X.texteDonnees(pr, S.seancesDe(pr.id), S.bilanProgramme(pr), S.activitesDe(pr))); }
     case 'couleur':
       S.get().reglages.couleur = d.couleur;
       S.enregistrer();
@@ -1165,6 +1258,8 @@ app.addEventListener('click', (ev) => {
       if (confirmerDeux(el)) { const c = couleur(); S.reinitialiser(); S.get().reglages.couleur = c; S.enregistrer(); vueAccueil(); toast('Démo réinitialisée'); }
       return;
     case 'recap': return aller(`#/recap/${d.id}`);
+    case 'activite': return fenetreActivite(d.id ? S.activite(d.id) : null);
+    case 'dater': { const se = S.seance(d.id); return fenetreDate(se, () => vueRecap(se)); }
     case 'programmes': return aller('#/programmes');
     case 'programme': return aller(`#/programme/${d.id}`);
     case 'split': return aller(`#/split/${d.programme}/${d.split}`);

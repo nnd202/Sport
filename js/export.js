@@ -46,10 +46,11 @@ export function texteStructure(p) {
 
 const pct = (x) => `${x > 0 ? '+' : ''}${Math.round(x * 100)} %`;
 
-export function texteDonnees(p, seances, b) {
+export function texteDonnees(p, seances, b, activites = []) {
   const out = [`SPORT — ${nomCycle(p).toUpperCase()} — DONNÉES`];
   out.push(p.debut ? `Du ${dateCourte(p.debut)} au ${dateCourte(p.fin || aujourdhui())}${p.fin ? '' : ' (en cours)'}` : 'Pas encore commencé', '');
   out.push(ligne, 'BILAN', ligne);
+  if (b.activites) out.push(`${b.activites} activité${b.activites > 1 ? 's' : ''} libre${b.activites > 1 ? 's' : ''} en plus des séances`);
   out.push(`${b.seances} séance${b.seances > 1 ? "s" : ""} en ${b.jours} jour${b.jours > 1 ? "s" : ""}, soit ${b.parSemaine.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} par semaine`);
   if (b.seances) {
     out.push(`Durée moyenne d'une séance : ${dureeSeance(b.dureeMoyenne)}`);
@@ -79,6 +80,16 @@ export function texteDonnees(p, seances, b) {
     if (s.note) out.push(`  Note de séance : ${s.note}`);
     out.push('');
   }
-  out.push('--- Données brutes (pour un réimport) ---', JSON.stringify({ appli: 'Sport', type: 'donnees', programme: p, seances }));
+  if (activites.length) {
+    out.push(ligne, 'ACTIVITÉS LIBRES', ligne);
+    for (const a of activites) {
+      const infos = [a.heureDebut && a.heureFin && `${a.heureDebut} → ${a.heureFin}`, a.distance && `${kg(a.distance)} km`, a.deplus && `${kg(a.deplus)} m D+`, a.lieu, a.ressenti && `ressenti ${a.ressenti}/10`].filter(Boolean);
+      out.push(`${dateCourte(a.date)} · ${a.nom}${infos.length ? ` · ${infos.join(' · ')}` : ''}`);
+      if (a.lien) out.push(`  Trace : ${a.lien}`);
+      if (a.note) out.push(`  Note : ${a.note}`);
+    }
+    out.push('');
+  }
+  out.push('--- Données brutes (pour un réimport) ---', JSON.stringify({ appli: 'Sport', type: 'donnees', programme: p, seances, activites }));
   return out.join('\n');
 }

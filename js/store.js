@@ -6,7 +6,7 @@ const CLE = 'sport-etat';
 let etat = charger();
 
 function vierge() {
-  return { version: 1, programmes: [programmeDemo()], seances: [], encours: null, reglages: { antiVeille: false, couleur: 'C1' } };
+  return { version: 1, programmes: [programmeDemo()], seances: [], activites: [], encours: null, reglages: { antiVeille: false, couleur: 'C1' } };
 }
 
 function charger() {
@@ -29,7 +29,7 @@ export const seanceEnCours = () => (etat.encours ? seance(etat.encours) : null);
 
 export function seancesDe(programmeId) {
   return etat.seances
-    .filter((s) => s.programmeId === programmeId && s.fin)
+    .filter((s) => s.programmeId === programmeId && s.fin && s.id !== etat.encours)
     .sort((a, b) => (a.date + a.debut).localeCompare(b.date + b.debut));
 }
 
@@ -67,7 +67,9 @@ export function ordonnerSplits(programmeId, ids) {
 
 export function terminer(s, { ressenti, note }) {
   if (!s.debut) lancer(s);
-  s.fin = new Date().toISOString();
+  // Séance saisie à une autre date : on garde les heures saisies.
+  if (!s.passee) s.fin = new Date().toISOString();
+  else if (!s.fin) s.fin = s.debut;
   s.ressenti = ressenti;
   s.note = note || '';
   s.chrono = null;
@@ -146,7 +148,7 @@ export function bilanProgramme(p, jusqua = p.fin || aujourdhui()) {
     return { split: sp, nb: ls.length, debut, fin, evolution: debut ? (fin - debut) / debut : null };
   });
   return {
-    seances: l.length, jours, tonnage,
+    seances: l.length, jours, tonnage, activites: activitesDe(p).length,
     parSemaine: jours ? (l.length / jours) * 7 : 0,
     moyenne: l.length ? tonnage / l.length : 0,
     dureeMoyenne: l.length ? bilans.reduce((a, b) => a + b.dureeSec, 0) / l.length : 0,
@@ -182,4 +184,62 @@ export function rouvrir(p) {
   p.statut = 'en-cours';
   p.fin = null;
   enregistrer();
+}
+
+// --- Dates, activités libres, chronologie ----------------------------------------------
+
+const iso = (date, heure) => (heure ? new Date(`${date}T${heure}:00`) : new Date(`${date}T12:00:00`)).toISOString();
+export const heure = (isoTexte) => {
+  if (!isoTexte) return '';
+  const d = new Date(isoTexte);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
+
+/** Place une séance à une date (et des heures) choisies. */
+export function dater(s, date, heureDebut, heureFin) {
+  const terminee = !!s.fin;
+  s.date = date;
+  if (!terminee && date === aujourdhui() && !heureDebut) { s.passee = false; enregistrer(); return; }
+  const dureeAvant = terminee && s.debut ? new Date(s.fin) - new Date(s.debut) : 0;
+  s.passee = true;
+  s.debut = iso(date, heureDebut);
+  // Une séance antérieure au début du programme recule ce début.
+  const p = programme(s.programmeId);
+  if (p && (!p.debut || date < p.debut)) p.debut = date;
+  if (heureFin) s.fin = new Date(Math.max(new Date(iso(date, heureFin)), new Date(s.debut))).toISOString();
+  else if (terminee) s.fin = new Date(new Date(s.debut).getTime() + dureeAvant).toISOString();
+  else s.fin = null;
+  enregistrer();
+}
+
+const activitesListe = () => (etat.activites ||= []);
+export const activite = (id) => activitesListe().find((a) => a.id === id);
+
+export function enregistrerActivite(a) {
+  const l = activitesListe();
+  if (!a.id) { a.id = uid('a'); l.push(a); }
+  enregistrer();
+  return a;
+}
+
+export function supprimerActivite(id) {
+  etat.activites = activitesListe().filter((a) => a.id !== id);
+  enregistrer();
+}
+
+/** Activités libres faites pendant un programme (entre son début et sa fin). */
+export function activitesDe(p) {
+  if (!p.debut) return [];
+  return activitesListe()
+    .filter((a) => a.date >= p.debut && (!p.fin || a.date <= p.fin))
+    .sort((x, y) => (x.date + (x.heureDebut || '12:00')).localeCompare(y.date + (y.heureDebut || '12:00')));
+}
+
+/** Chronologie d'un programme : séances terminées et activités libres, de la plus ancienne à la plus récente. */
+export function chronologie(p) {
+  const cle = (x) => x.type === 'seance' ? x.item.date + heure(x.item.debut) : x.item.date + (x.item.heureDebut || '12:00');
+  return [
+    ...seancesDe(p.id).map((item) => ({ type: 'seance', item })),
+    ...activitesDe(p).map((item) => ({ type: 'activite', item })),
+  ].sort((a, b) => cle(a).localeCompare(cle(b)));
 }
