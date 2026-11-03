@@ -262,7 +262,6 @@ function vueStats(p) {
   }
   const { couloirs, ponctuels } = ST.couloirs(p, seances);
   const tonnages = ST.tonnageParSplit(p, seances).filter((x) => x.points.length);
-  const repos = ST.reposParSeance(seances);
   const rp = ST.ressentiPerformance(seances);
   derniersCouloirs = couloirs;
 
@@ -282,7 +281,6 @@ function vueStats(p) {
     </button></li>`;
   };
 
-  const ecartRepos = repos.length ? repos.reduce((a, r) => a + r.reel - r.prevu, 0) / repos.length : 0;
 
   app.innerHTML = `
     ${teteStats(p)}
@@ -302,15 +300,6 @@ function vueStats(p) {
     ${couloirs.some((c) => !p.splits.some((sp) => sp.id === c.splitId)) ? `<ul class="couloirs">${couloirs.filter((c) => !p.splits.some((sp) => sp.id === c.splitId)).map(ligneCouloir).join('')}</ul>` : ''}
     ${ponctuels.length ? `<p class="sous-titre">Ponctuels <small>ajoutés « en plus » en séance</small></p>
       <ul class="couloirs">${ponctuels.map((x) => `<li class="ligne-couloir statique"><span class="lc-nom"><strong>${esc(x.nom)}</strong><small>${dateCourte(x.date)} · ${esc(x.texte)}</small></span><span class="lc-val"><b>${fmtVolume(x.volume, x.unite)}</b></span></li>`).join('')}</ul>` : ''}
-
-    <h3 class="titre-section">Repos</h3>
-    ${repos.length ? `
-      <div class="carte-graphe">
-        <p class="graphe-titre">Repos moyen par séance</p>
-        <div class="legende"><span><i class="cle accent"></i>réel</span><span><i class="cle gris"></i>prévu</span></div>
-        ${G.courbe({ points: repos.map((r) => ({ etiquette: dateCourte(r.date), y: r.reel, tip: `${duree(r.reel)} de repos moyen\nprévu ${duree(r.prevu)} · ${r.nom}, ${dateCourte(r.date)}` })), reference: repos.map((r) => r.prevu), format: (v) => duree(v), zero: true, temps: true })}
-        <p class="phrase">${Math.abs(ecartRepos) < 5 ? 'Tu tiens tes repos prévus.' : ecartRepos > 0 ? `En moyenne, tes repos dépassent le prévu de <b>${duree(ecartRepos)}</b>.` : `En moyenne, tes repos sont plus courts que prévu de <b>${duree(-ecartRepos)}</b>.`}</p>
-      </div>` : '<p class="vide">Utilise le chrono (ou saisis les repos dans une séance) pour voir tes temps de repos.</p>'}
 
     <h3 class="titre-section">Ressenti et performance</h3>
     ${rp.points.length >= 3 ? `
@@ -341,9 +330,6 @@ function phraseRessenti(rp) {
       : ecart < 0
         ? `Tes meilleures séances ont un ressenti <b>plus bas</b> (${f(rp.ressentiBonnes)}/10) que les moins bonnes (${f(rp.ressentiMoins)}/10).`
         : `Tes meilleures séances ont un ressenti plus haut (${f(rp.ressentiBonnes)}/10) que les moins bonnes (${f(rp.ressentiMoins)}/10).`);
-  }
-  if (rp.reposBas != null && rp.reposHauts != null) {
-    morceaux.push(`Les jours de ressenti bas (4 ou moins), ton repos moyen est de ${duree(rp.reposBas)}, contre ${duree(rp.reposHauts)} les bons jours (7 ou plus).`);
   }
   return morceaux.join(' ') || 'Pas encore assez de séances contrastées pour en tirer une tendance.';
 }
@@ -1165,33 +1151,8 @@ function ligneSerie(b, e, si, numero) {
       <button class="serie-valeur" data-action="editer-serie" data-bloc="${b.id}" data-exo="${e.id}" data-i="${si}">
         ${valeurs(e, s)}${change ? '<span class="modifie" title="Différent du prévu"></span>' : ''}
       </button>
-      ${pastilleRepos(b, e, si)}
       <button class="coche" data-action="cocher" data-bloc="${b.id}" data-exo="${e.id}" data-i="${si}" aria-label="Valider la série">${I.check}</button>
     </div>`;
-}
-
-// Le chrono se rattache à la dernière série validée d'un bloc déplié.
-function ancreCourante(s) {
-  let meilleure = null;
-  for (const b of s.blocs) {
-    if (b.replie) continue;
-    for (const e of actifs(b)) if (!['echauffement', 'cardio'].includes(e.mesure)) e.series.forEach((x, i) => {
-      if (x.fait && x.faitA && (!meilleure || x.faitA > meilleure.t)) meilleure = { bloc: b.id, exo: e.id, i, t: x.faitA };
-    });
-  }
-  return meilleure;
-}
-
-const memeAncre = (a, b, e, si) => a && a.bloc === b.id && a.exo === e.id && a.i === si;
-
-function pastilleRepos(b, e, si) {
-  const s = active();
-  if (!s) return '';
-  if (s.chrono && memeAncre(s.chrono.ancre, b, e, si)) return '<span class="repos-pastille en-cours">repos…</span>';
-  const k = s.repos.findIndex((r) => memeAncre(r.ancre, b, e, si));
-  if (k < 0) return '';
-  const r = s.repos[k];
-  return `<button class="repos-pastille ${r.reel > r.prevu ? 'long' : ''}" data-action="repos" data-k="${k}">${duree(r.reel)}</button>`;
 }
 
 function etiquettes(e, s) {
@@ -1315,7 +1276,6 @@ function vueRecap(s) {
       <div class="tuile"><small>Tonnage</small><strong>${kg(Math.round(b.tonnage))} kg${b.tonnageCorps ? ` <em>dont ${kg(Math.round(b.tonnageCorps))} au poids du corps</em>` : ''}</strong></div>
       <div class="tuile"><small>Séries</small><strong>${b.faites}/${b.series}</strong></div>
       <div class="tuile"><small>Ressenti</small><strong>${s.ressenti ? `${s.ressenti}/10` : '–'}</strong></div>
-      <div class="tuile large"><small>Repos moyen</small><strong>${b.nbRepos ? `${duree(b.reposMoyen)} <em>prévu ${duree(b.reposPrevuMoyen)} · ${b.nbRepos} repos</em>` : '<em>Chrono non utilisé</em>'}</strong></div>
     </div>
     ${s.note ? `<p class="note-seance">${esc(s.note)}</p>` : ''}
     <div class="recap">
@@ -1345,66 +1305,28 @@ function blocCourant(s) {
 
 function dessinerChrono() {
   const s = active();
-  // Pas de chrono pour une séance saisie après coup : les repos se saisissent dans chaque série.
+  // Pas de chrono pour une séance saisie après coup ou en modification.
   if (!s || !location.hash.startsWith('#/seance') || s.edition || s.passee) { flottant.innerHTML = ''; return; }
-  // (la modification d'une séance passée n'a jamais de chrono)
-  const a = ancreCourante(s);
-  const b = s.chrono ? s.blocs.find((x) => x.id === s.chrono.blocId) : (a ? s.blocs.find((x) => x.id === a.bloc) : blocCourant(s));
   const marche = !!s.chrono;
+  const affiche = marche ? Date.now() - s.chrono.depart : s.chronoDernier || 0;
   flottant.innerHTML = `
-    <div class="chrono ${marche ? 'marche' : ''}">
-      <div class="chrono-info"><small>Repos</small><span>prévu ${duree(b?.repos || 0)}</span></div>
-      <div class="chrono-temps" data-chrono>${chronoTexte(marche ? Date.now() - s.chrono.depart : 0)}</div>
+    <div class="chrono ${marche ? 'marche' : ''} ${!marche && s.chronoDernier ? 'arrete' : ''}">
+      <div class="chrono-temps" data-chrono>${chronoTexte(affiche)}</div>
       <button class="chrono-btn" data-action="chrono" aria-label="${marche ? 'Arrêter' : 'Démarrer'} le chrono">${marche ? I.stop : I.play}</button>
     </div>`;
   if (marche) requestAnimationFrame(boucleChrono);
 }
 
-// Garde-fous : un arrêt sous 5 s est ignoré (double toucher) ; relancer moins de 10 s
-// après un arrêt reprend le même repos (arrêt par erreur). Chaque repos est rattaché à la
-// série validée juste avant et s'affiche sous elle : une erreur se voit et se corrige.
-const MIN_REPOS = 5, REPRISE = 10;
-
+// Chrono libre : on le lance et on l'arrête quand on veut ; rien n'est enregistré.
+// À l'arrêt, le temps reste affiché jusqu'au prochain départ.
 function basculerChrono() {
   const s = S.seanceEnCours();
   if (!s) return;
   if (!s.debut) { S.lancer(s); vueSeance(); }
-  if (!s.chrono) {
-    const der = s.repos[s.repos.length - 1];
-    if (der && s.dernierArret && Date.now() - s.dernierArret < REPRISE * 1000 && der.depart) {
-      s.repos.pop();
-      s.chrono = { depart: der.depart, blocId: der.blocId, ancre: der.ancre };
-      toast('Repos repris');
-    } else {
-      const b = blocCourant(s);
-      const ancre = ancreCourante(s);
-      s.chrono = { depart: Date.now(), blocId: ancre?.bloc || b?.id || null, ancre };
-    }
-  } else {
-    const reel = Math.round((Date.now() - s.chrono.depart) / 1000);
-    const b = s.blocs.find((x) => x.id === s.chrono.blocId);
-    if (reel < MIN_REPOS) {
-      toast('Moins de 5 s : pas enregistré');
-    } else {
-      s.repos.push({ blocId: s.chrono.blocId, ancre: s.chrono.ancre, depart: s.chrono.depart, prevu: b?.repos || 0, reel, a: new Date().toISOString() });
-      s.dernierArret = Date.now();
-    }
-    s.chrono = null;
-  }
+  if (!s.chrono) s.chrono = { depart: Date.now() };
+  else { s.chronoDernier = Date.now() - s.chrono.depart; s.chrono = null; }
   S.enregistrer();
-  vueSeance();
-}
-
-function fenetreRepos(s, index) {
-  const r = s.repos[index];
-  const ecart = r.reel - r.prevu;
-  ouvrirFenetre(`
-    <h2>Repos ${duree(r.reel)} <small>prévu ${duree(r.prevu)}</small></h2>
-    <p class="aide">${ecart > 0 ? `${duree(ecart)} de plus que prévu.` : ecart < 0 ? `${duree(-ecart)} de moins que prévu.` : 'Pile le temps prévu.'} Supprime-le s'il vient d'une erreur de chrono : il ne comptera pas dans les stats.</p>
-    <button class="btn btn-large" data-f="ok">Garder</button>
-    <div class="actions-sec"><button class="lien danger" data-f="suppr">Supprimer ce repos</button></div>`);
-  couche.querySelector('[data-f="ok"]').onclick = fermer;
-  couche.querySelector('[data-f="suppr"]').onclick = () => { s.repos.splice(index, 1); s.dernierArret = null; S.enregistrer(); fermer(); vueSeance(); };
+  dessinerChrono();
 }
 
 const chronoTexte = (ms) => {
@@ -1418,8 +1340,6 @@ function boucleChrono() {
   if (!s?.chrono || !c) return;
   const ms = Date.now() - s.chrono.depart;
   c.innerHTML = chronoTexte(ms);
-  const b = s.blocs.find((x) => x.id === s.chrono.blocId);
-  c.classList.toggle('depasse', !!b && ms / 1000 > b.repos);
   requestAnimationFrame(boucleChrono);
 }
 
@@ -1521,19 +1441,6 @@ couche.addEventListener('click', (ev) => {
   }
 });
 
-function reposDe(s, blocId, exoId, i) {
-  return s.repos.find((r) => r.ancre && r.ancre.bloc === blocId && r.ancre.exo === exoId && r.ancre.i === i);
-}
-
-/** Repos saisi à la main (séance après coup ou correction). 0 = pas de repos. */
-function saisirRepos(s, blocId, exoId, i, sec) {
-  const r = reposDe(s, blocId, exoId, i);
-  if (!sec) { if (r) s.repos.splice(s.repos.indexOf(r), 1); return; }
-  const prevu = s.blocs.find((b) => b.id === blocId)?.repos || 0;
-  if (r) r.reel = sec;
-  else s.repos.push({ blocId, ancre: { bloc: blocId, exo: exoId, i }, prevu, reel: sec, a: new Date().toISOString(), manuel: true });
-}
-
 function fenetreSerie(s, blocId, exoId, i) {
   const { e } = trouver(s, blocId, exoId);
   const v = e.series[i];
@@ -1542,7 +1449,7 @@ function fenetreSerie(s, blocId, exoId, i) {
       <h2>${esc(e.nom)} <small>série ${i + 1}</small></h2>
       ${v.prevu ? `<p class="aide">Prévu : ${texteSerie(e, v.prevu)}${e.uni ? ' par côté' : ''}</p>` : ''}
       ${champsMesure(e.mesure, v)}
-      ${s.edition || s.passee || reposDe(s, blocId, exoId, i) ? `${stepper('repos', 'Repos après cette série (0 = aucun)', reposDe(s, blocId, exoId, i)?.reel || 0, 10, 's')}` : ''}
+      ${e.mesure === 'temps' ? `<button type="button" class="mini-chrono" data-f="mini-chrono">${I.play}<span data-mini>Chronométrer</span></button>` : ''}
       <button class="btn btn-principal btn-large">${v.fait ? 'Enregistrer' : 'Valider la série'}</button>
       <div class="actions-sec">
         ${v.fait ? '<button type="button" class="lien" data-f="defaire">Marquer non faite</button>' : ''}
@@ -1551,11 +1458,35 @@ function fenetreSerie(s, blocId, exoId, i) {
     </form>`, (fd) => {
     if (!v.fait) v.faitA = Date.now();
     Object.assign(v, lireMesure(fd, e.mesure), { fait: true });
-    if (fd.has('repos')) saisirRepos(s, blocId, exoId, i, Math.max(0, Math.round(num(fd.get('repos')))));
     s.dernierBloc = blocId;
     if (!s.debut) S.lancer(s);
     S.enregistrer(); fermer(); vueSeance();
   });
+  // Mini chrono des exercices en temps : à l'arrêt, les secondes s'inscrivent dans le champ.
+  const mc = couche.querySelector('[data-f="mini-chrono"]');
+  if (mc) {
+    let depart = null, minuteur = null;
+    const lib = mc.querySelector('[data-mini]');
+    mc.onclick = () => {
+      if (!depart) {
+        depart = Date.now();
+        mc.classList.add('marche');
+        mc.querySelector('svg').outerHTML = I.stop;
+        minuteur = setInterval(() => {
+          if (couche.hidden || !document.contains(mc)) return clearInterval(minuteur);
+          lib.innerHTML = chronoTexte(Date.now() - depart);
+        }, 50);
+      } else {
+        const sec = Math.round((Date.now() - depart) / 1000);
+        clearInterval(minuteur);
+        depart = null;
+        mc.classList.remove('marche');
+        mc.querySelector('svg').outerHTML = I.play;
+        lib.textContent = `${duree(sec)} inscrit · relancer`;
+        couche.querySelector('[name="sec"]').value = sec;
+      }
+    };
+  }
   couche.querySelector('[data-f="supprimer"]').onclick = () => {
     e.series.splice(i, 1);
     S.enregistrer(); fermer(); vueSeance();
@@ -1901,7 +1832,6 @@ app.addEventListener('click', (ev) => {
       S.enregistrer();
       return vueSeance();
     }
-    case 'repos': return fenetreRepos(s, +d.k);
     case 'editer-serie': return fenetreSerie(s, d.bloc, d.exo, +d.i);
     case 'editer-exo': return fenetreExo(s, d.bloc, d.exo);
     case 'ajouter-serie': {

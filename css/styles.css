@@ -161,7 +161,7 @@ b { font-weight: 600; }
 body.clavier .flottant { display: none; }
 .chrono {
   pointer-events: auto; width: min(calc(100% - 20px), 540px); margin-bottom: calc(10px + env(safe-area-inset-bottom));
-  display: grid; grid-template-columns: 78px 1fr 58px; align-items: center; gap: 10px;
+  display: grid; grid-template-columns: 1fr 58px; align-items: center; gap: 10px;
   padding: 8px 8px 8px 18px; border-radius: 22px; background: rgba(255, 255, 255, .97);
   box-shadow: 0 6px 22px rgba(30, 45, 60, .14); border: 1px solid var(--trait);
 }
@@ -426,3 +426,9 @@ svg.graphe text { stroke: none; }
 .aide-pct { display: block; font-size: 12px; }
 .mini-champ.lest { flex: 0 0 92px; }
 .mini-champ.lest span:first-child { color: var(--texte-3); }
+
+.chrono-temps { text-align: left; padding-left: 4px; }
+.chrono.arrete .chrono-temps { color: var(--texte-2); }
+.mini-chrono { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 48px; border-radius: 12px; border: 1.5px solid color-mix(in srgb, var(--b) 35%, white); color: var(--accent); font-weight: 600; font-size: 16px; font-variant-numeric: tabular-nums; }
+.mini-chrono svg { width: 18px; height: 18px; }
+.mini-chrono.marche { background: var(--pale); }

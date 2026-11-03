@@ -55,7 +55,6 @@ export function texteDonnees(p, seances, b, activites = [], corps = []) {
   if (b.seances) {
     out.push(`Durée moyenne d'une séance : ${dureeSeance(b.dureeMoyenne)}`);
     out.push(`Tonnage moyen par séance : ${kg(Math.round(b.moyenne))} kg`);
-    if (b.reposMoyen) out.push(`Repos moyen : ${duree(b.reposMoyen)} (prévu ${duree(b.reposPrevu)})`);
     if (b.ressenti) out.push(`Ressenti moyen : ${b.ressenti.toLocaleString('fr-FR', { maximumFractionDigits: 1 })}/10`);
     out.push('', 'Progression du tonnage par split (première → dernière séance) :');
     for (const x of b.parSplit) {
@@ -79,7 +78,6 @@ export function texteDonnees(p, seances, b, activites = [], corps = []) {
       out.push(`  ${e.nom}${tags.length ? ` (${tags.join(', ')})` : ''} : ${faites.length ? faites.map((x) => texteSerie(e, x)).join(', ') : 'non fait'}${non && faites.length ? ` · ${non} série${non > 1 ? 's' : ''} non faite${non > 1 ? 's' : ''}` : ''}`);
       if (e.note) out.push(`    Note : ${e.note}`);
     }
-    if (bs.nbRepos) out.push(`  Repos moyen : ${duree(bs.reposMoyen)} (prévu ${duree(bs.reposPrevuMoyen)})`);
     if (s.note) out.push(`  Note de séance : ${s.note}`);
     out.push('');
   }
