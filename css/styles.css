@@ -161,7 +161,7 @@ b { font-weight: 600; }
 body.clavier .flottant { display: none; }
 .chrono {
   pointer-events: auto; width: min(calc(100% - 20px), 540px); margin-bottom: calc(10px + env(safe-area-inset-bottom));
-  display: grid; grid-template-columns: 1fr 58px; align-items: center; gap: 10px;
+  display: grid; grid-template-columns: 1fr 44px 58px; align-items: center; gap: 10px;
   padding: 8px 8px 8px 18px; border-radius: 22px; background: rgba(255, 255, 255, .97);
   box-shadow: 0 6px 22px rgba(30, 45, 60, .14); border: 1px solid var(--trait);
 }
@@ -429,6 +429,15 @@ svg.graphe text { stroke: none; }
 
 .chrono-temps { text-align: left; padding-left: 4px; }
 .chrono.arrete .chrono-temps { color: var(--texte-2); }
-.mini-chrono { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 48px; border-radius: 12px; border: 1.5px solid color-mix(in srgb, var(--b) 35%, white); color: var(--accent); font-weight: 600; font-size: 16px; font-variant-numeric: tabular-nums; }
-.mini-chrono svg { width: 18px; height: 18px; }
-.mini-chrono.marche { background: var(--pale); }
+
+.chrono-reset { width: 44px; height: 44px; border-radius: 13px; display: grid; place-items: center; color: var(--texte-2); background: var(--fond); }
+.chrono-reset:disabled { opacity: .35; }
+.chrono-reset svg { width: 21px; height: 21px; }
+.mini-chrono { display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 16px; border-radius: 16px; border: 1.5px solid var(--trait); background: #fff; }
+.mini-chrono.marche { border-color: var(--a); background: var(--pale-2); }
+.mini-temps { flex: 1; font-size: 34px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; color: var(--texte-3); }
+.mini-chrono.marche .mini-temps { color: var(--texte); }
+.mini-btn { width: 58px; height: 58px; border-radius: 17px; display: grid; place-items: center; background: var(--degrade); background-origin: border-box; color: #fff; flex: none; }
+.mini-chrono.marche .mini-btn { background: linear-gradient(120deg, #6b7380, #3f4652); }
+.mini-btn svg { width: 24px; height: 24px; }
+.mini-aide { margin-top: -6px; }

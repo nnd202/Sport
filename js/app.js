@@ -22,6 +22,8 @@ const I = {
   check: '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
   croix: '<svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></svg>',
   play: '<svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z" class="plein"/></svg>',
+  pause: '<svg viewBox="0 0 24 24"><rect x="6.5" y="5.5" width="4" height="13" rx="1.2" class="plein"/><rect x="13.5" y="5.5" width="4" height="13" rx="1.2" class="plein"/></svg>',
+  reset: '<svg viewBox="0 0 24 24"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.5v4h4"/></svg>',
   stop: '<svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2" class="plein"/></svg>',
   haut: '<svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg>',
   bas: '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>',
@@ -1303,28 +1305,40 @@ function blocCourant(s) {
   return s.blocs.find((b) => !blocFini(b) && actifs(b).length) || s.blocs[0];
 }
 
+// Chrono libre : lecture / pause (reprend là où il s'était arrêté) et remise à zéro.
+// État : s.chrono = { depart } quand il tourne ; s.chronoCumul = temps déjà écoulé (ms).
+const tempsChrono = (s) => (s.chronoCumul || 0) + (s.chrono ? Date.now() - s.chrono.depart : 0);
+
 function dessinerChrono() {
   const s = active();
   // Pas de chrono pour une séance saisie après coup ou en modification.
   if (!s || !location.hash.startsWith('#/seance') || s.edition || s.passee) { flottant.innerHTML = ''; return; }
   const marche = !!s.chrono;
-  const affiche = marche ? Date.now() - s.chrono.depart : s.chronoDernier || 0;
+  const t = tempsChrono(s);
   flottant.innerHTML = `
-    <div class="chrono ${marche ? 'marche' : ''} ${!marche && s.chronoDernier ? 'arrete' : ''}">
-      <div class="chrono-temps" data-chrono>${chronoTexte(affiche)}</div>
-      <button class="chrono-btn" data-action="chrono" aria-label="${marche ? 'Arrêter' : 'Démarrer'} le chrono">${marche ? I.stop : I.play}</button>
+    <div class="chrono ${marche ? 'marche' : ''} ${!marche && t ? 'arrete' : ''}">
+      <div class="chrono-temps" data-chrono>${chronoTexte(t)}</div>
+      <button class="chrono-reset" data-action="chrono-reset" aria-label="Remettre à zéro" ${t ? '' : 'disabled'}>${I.reset}</button>
+      <button class="chrono-btn" data-action="chrono" aria-label="${marche ? 'Mettre en pause' : 'Lancer'} le chrono">${marche ? I.pause : I.play}</button>
     </div>`;
   if (marche) requestAnimationFrame(boucleChrono);
 }
 
-// Chrono libre : on le lance et on l'arrête quand on veut ; rien n'est enregistré.
-// À l'arrêt, le temps reste affiché jusqu'au prochain départ.
 function basculerChrono() {
   const s = S.seanceEnCours();
   if (!s) return;
   if (!s.debut) { S.lancer(s); vueSeance(); }
   if (!s.chrono) s.chrono = { depart: Date.now() };
-  else { s.chronoDernier = Date.now() - s.chrono.depart; s.chrono = null; }
+  else { s.chronoCumul = tempsChrono(s); s.chrono = null; }
+  S.enregistrer();
+  dessinerChrono();
+}
+
+function remettreChrono() {
+  const s = S.seanceEnCours();
+  if (!s) return;
+  s.chrono = null;
+  s.chronoCumul = 0;
   S.enregistrer();
   dessinerChrono();
 }
@@ -1338,8 +1352,7 @@ function boucleChrono() {
   const s = S.seanceEnCours();
   const c = document.querySelector('[data-chrono]');
   if (!s?.chrono || !c) return;
-  const ms = Date.now() - s.chrono.depart;
-  c.innerHTML = chronoTexte(ms);
+  c.innerHTML = chronoTexte(tempsChrono(s));
   requestAnimationFrame(boucleChrono);
 }
 
@@ -1449,7 +1462,11 @@ function fenetreSerie(s, blocId, exoId, i) {
       <h2>${esc(e.nom)} <small>série ${i + 1}</small></h2>
       ${v.prevu ? `<p class="aide">Prévu : ${texteSerie(e, v.prevu)}${e.uni ? ' par côté' : ''}</p>` : ''}
       ${champsMesure(e.mesure, v)}
-      ${e.mesure === 'temps' ? `<button type="button" class="mini-chrono" data-f="mini-chrono">${I.play}<span data-mini>Chronométrer</span></button>` : ''}
+      ${e.mesure === 'temps' ? `<div class="mini-chrono">
+        <div class="mini-temps" data-mini>${chronoTexte(0)}</div>
+        <button type="button" class="mini-btn" data-f="mini-chrono" aria-label="Chronométrer">${I.play}</button>
+      </div>
+      <p class="aide mini-aide" data-mini-aide>Lance le chrono : à l'arrêt, la durée s'inscrit dans le champ.</p>` : ''}
       <button class="btn btn-principal btn-large">${v.fait ? 'Enregistrer' : 'Valider la série'}</button>
       <div class="actions-sec">
         ${v.fait ? '<button type="button" class="lien" data-f="defaire">Marquer non faite</button>' : ''}
@@ -1466,12 +1483,15 @@ function fenetreSerie(s, blocId, exoId, i) {
   const mc = couche.querySelector('[data-f="mini-chrono"]');
   if (mc) {
     let depart = null, minuteur = null;
-    const lib = mc.querySelector('[data-mini]');
+    const cadre = mc.closest('.mini-chrono');
+    const lib = cadre.querySelector('[data-mini]');
+    const aide = couche.querySelector('[data-mini-aide]');
     mc.onclick = () => {
       if (!depart) {
         depart = Date.now();
-        mc.classList.add('marche');
-        mc.querySelector('svg').outerHTML = I.stop;
+        cadre.classList.add('marche');
+        mc.innerHTML = I.stop;
+        aide.textContent = 'Arrête quand tu as fini : la durée s\'inscrira dans le champ.';
         minuteur = setInterval(() => {
           if (couche.hidden || !document.contains(mc)) return clearInterval(minuteur);
           lib.innerHTML = chronoTexte(Date.now() - depart);
@@ -1480,10 +1500,10 @@ function fenetreSerie(s, blocId, exoId, i) {
         const sec = Math.round((Date.now() - depart) / 1000);
         clearInterval(minuteur);
         depart = null;
-        mc.classList.remove('marche');
-        mc.querySelector('svg').outerHTML = I.play;
-        lib.textContent = `${duree(sec)} inscrit · relancer`;
+        cadre.classList.remove('marche');
+        mc.innerHTML = I.play;
         couche.querySelector('[name="sec"]').value = sec;
+        aide.textContent = `${duree(sec)} inscrit dans le champ. Relancer repart de zéro.`;
       }
     };
   }
@@ -1863,6 +1883,7 @@ app.addEventListener('click', (ev) => {
 });
 
 flottant.addEventListener('click', (ev) => {
+  if (ev.target.closest('[data-action="chrono-reset"]')) return remettreChrono();
   if (ev.target.closest('[data-action="chrono"]')) basculerChrono();
 });
 
