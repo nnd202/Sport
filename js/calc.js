@@ -40,11 +40,11 @@ export const kg = (n) => (Math.round(n * 100) / 100).toLocaleString('fr-FR');
 
 /** Texte d'une série : « 45 kg × 12 », « 45 s », « 10 reps », « 10 reps +10 kg ». */
 export function texteSerie(exo, s) {
-  if (exo.mesure === 'temps') return `${s.sec ?? 0} s`;
-  if (exo.mesure === 'cardio') return `${kg(s.min ?? 0)} min`;
+  if (exo.mesure === 'temps') return `${s.sec ?? '–'} s`;
+  if (exo.mesure === 'cardio') return `${s.min == null ? '–' : kg(s.min)} min`;
   if (exo.mesure === 'echauffement') return 'fait';
-  if (exo.mesure === 'pdc') return `${s.reps ?? 0} reps${s.lest ? ` +${kg(s.lest)} kg` : ''}`;
-  return `${kg(s.kg ?? 0)} kg × ${s.reps ?? 0}`;
+  if (exo.mesure === 'pdc') return `${s.reps ?? '–'} reps${s.lest ? ` +${kg(s.lest)} kg` : ''}`;
+  return `${s.kg == null ? '–' : kg(s.kg)} kg × ${s.reps ?? '–'}`;
 }
 
 // Poids du corps à une date (dernière pesée au plus tard ce jour-là), fourni par le stockage.
@@ -138,7 +138,7 @@ export function nouvelleSeance(programme, split, derniere) {
           mesure: e.mesure,
           uni: !!e.uni,
           pct: e.pct ?? null,
-          note: '',
+          note: e.note || '',
           series: e.series.map((p, i) => {
             const v = avant?.series[i] ?? avant?.series[avant.series.length - 1];
             const base = v ? { kg: v.kg, reps: v.reps, sec: v.sec, lest: v.lest, min: v.min } : p;

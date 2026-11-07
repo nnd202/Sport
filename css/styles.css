@@ -161,7 +161,7 @@ b { font-weight: 600; }
 body.clavier .flottant { display: none; }
 .chrono {
   pointer-events: auto; width: min(calc(100% - 20px), 540px); margin-bottom: calc(10px + env(safe-area-inset-bottom));
-  display: grid; grid-template-columns: 1fr 44px 58px; align-items: center; gap: 10px;
+  display: grid; grid-template-columns: 1fr 46px 64px; align-items: center; gap: 10px;
   padding: 8px 8px 8px 18px; border-radius: 22px; background: rgba(255, 255, 255, .97);
   box-shadow: 0 6px 22px rgba(30, 45, 60, .14); border: 1px solid var(--trait);
 }
@@ -441,3 +441,14 @@ svg.graphe text { stroke: none; }
 .mini-chrono.marche .mini-btn { background: linear-gradient(120deg, #6b7380, #3f4652); }
 .mini-btn svg { width: 24px; height: 24px; }
 .mini-aide { margin-top: -6px; }
+
+.bloc-temps { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--texte-3); font-variant-numeric: tabular-nums; margin-top: 1px; }
+.bloc-temps.fini { color: var(--accent); }
+.bloc-temps svg { width: 13px; height: 13px; stroke-width: 2.6; }
+
+/* Chrono un peu plus haut et plus haut de boutons (support de téléphone) */
+.chrono { margin-bottom: calc(22px + env(safe-area-inset-bottom)); }
+.chrono-btn { width: 64px; height: 74px; border-radius: 18px; }
+.chrono-reset { height: 64px; }
+.espace-chrono { height: calc(130px + env(safe-area-inset-bottom)); }
+.toast { bottom: calc(130px + env(safe-area-inset-bottom)); }

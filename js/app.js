@@ -137,6 +137,13 @@ function actions(liste) {
     `<button class="action-tete" data-action="${action}" ${extra}>${I[icone]}<span>${libelle}</span></button>`).join('')}</nav>`;
 }
 
+/** « 23 séances dont 4 libres » : séances de split et activités libres du programme. */
+function texteNbSeances(p) {
+  const n = S.seancesDe(p.id).length, l = S.activitesDe(p).length, t = n + l;
+  if (!t) return '';
+  return `${t} séance${t > 1 ? 's' : ''}${l ? ` dont ${l} libre${l > 1 ? 's' : ''}` : ''}`;
+}
+
 function carteProgramme(p, enAvant = false) {
   const b = S.bilanProgramme(p);
   const se = S.seanceEnCours();
@@ -145,7 +152,7 @@ function carteProgramme(p, enAvant = false) {
   return `<li><button class="carte-programme ${enAvant ? 'en-avant' : ''}" data-action="ouvrir-programme" data-id="${p.id}">
     <span class="cp-texte">
       <strong>${esc(p.nom)}</strong>
-      <small>${dates}${b.seances ? ` · ${b.seances} séance${b.seances > 1 ? 's' : ''}` : ''}${!b.seances && p.splits.length ? ` · ${p.splits.length} split${p.splits.length > 1 ? 's' : ''}` : ''}</small>
+      <small>${dates}${texteNbSeances(p) ? ` · ${texteNbSeances(p)}` : ''}${!texteNbSeances(p) && p.splits.length ? ` · ${p.splits.length} split${p.splits.length > 1 ? 's' : ''}` : ''}</small>
       ${seIci ? `<span class="cp-encours"><i style="--c:${se.couleur}"></i>${esc(se.nom)} en cours${se.debut && !se.passee ? ` · <span data-temps-seance>${duree((Date.now() - new Date(se.debut)) / 1000)}</span>` : ''}</span>` : ''}
     </span>
     <span class="chevron-droit">${I.droite}</span>
@@ -195,7 +202,7 @@ function vuePrincipale(p) {
         <div class="bandeau-titre"><small>${STATUTS[p.statut]}</small><h1>${esc(p.nom)}</h1></div>
       </div>
       <div class="bandeau-chiffres">
-        <span><b>${faites.length}</b> séance${faites.length > 1 ? 's' : ''}</span>
+        <span>${texteNbSeances(p) || '0 séance'}</span>
         <span>${p.debut ? `${p.fin ? `du ${dateCourte(p.debut)} au ${dateCourte(p.fin)}` : `depuis le ${dateCourte(p.debut)}`}` : 'pas encore commencé'}</span>
       </div>
       ${actions([['configurer', 'reglages', 'Configurer', `data-id="${p.id}"`], ['calendrier', 'calendrier', 'Calendrier', `data-id="${p.id}"`], ['stats', 'stats', 'Stats', `data-id="${p.id}"`]])}
@@ -805,7 +812,7 @@ function vueProgrammes() {
     const b = S.bilanProgramme(p);
     const dates = p.debut ? `${dateCourte(p.debut)}${p.fin ? ` → ${dateCourte(p.fin)}` : ''}` : 'Pas encore commencé';
     return `<li><button class="split ligne-prog" data-action="programme" data-id="${p.id}" data-depuis="gestion" style="--c:var(--b)">
-      <span class="split-texte"><strong>${esc(p.nom)}</strong><small>${dates} · ${p.splits.length} split${p.splits.length > 1 ? 's' : ''}${b.seances ? ` · ${b.seances} séance${b.seances > 1 ? 's' : ''}` : ''}</small></span>
+      <span class="split-texte"><strong>${esc(p.nom)}</strong><small>${dates} · ${p.splits.length} split${p.splits.length > 1 ? 's' : ''}${texteNbSeances(p) ? ` · ${texteNbSeances(p)}` : ''}</small></span>
       <span class="chevron-droit">${I.droite}</span>
     </button></li>`;
   };
@@ -867,7 +874,7 @@ function blocBilan(b) {
   const f = (x) => x.toLocaleString('fr-FR', { maximumFractionDigits: 1 });
   return `
     <div class="tuiles">
-      <div class="tuile"><small>Séances</small><strong>${b.seances} <em>en ${b.jours} j</em></strong></div>
+      <div class="tuile"><small>Séances</small><strong>${b.seances + b.activites} <em>${b.activites ? `dont ${b.activites} libre${b.activites > 1 ? 's' : ''} · ` : ''}en ${b.jours} j</em></strong></div>
       <div class="tuile"><small>Rythme</small><strong>${f(b.parSemaine)} <em>par semaine</em></strong></div>
       <div class="tuile"><small>Tonnage moyen</small><strong>${kg(Math.round(b.moyenne))} kg <em>/ séance</em></strong></div>
       <div class="tuile"><small>Ressenti moyen</small><strong>${b.ressenti ? `${f(b.ressenti)}/10` : '–'}</strong></div>
@@ -880,7 +887,7 @@ function blocBilan(b) {
           ${x.nb ? `<span class="valeurs">${kg(Math.round(x.debut))} → ${kg(Math.round(x.fin))} kg</span>
             <span class="evolution ${x.evolution > 0 ? 'hausse' : x.evolution < 0 ? 'baisse' : ''}">${x.nb > 1 && x.evolution != null ? `${x.evolution > 0 ? '+' : ''}${Math.round(x.evolution * 100)} %` : '–'}</span>` : '<span class="valeurs">pas encore fait</span>'}
         </div>`).join('')}
-      <p class="anecdote">${b.activites ? `${b.activites} activité${b.activites > 1 ? 's' : ''} libre${b.activites > 1 ? 's' : ''} · ` : ''}Total soulevé : ${kg(Math.round(b.tonnage / 100) / 10)} t</p>
+      <p class="anecdote">Total soulevé : ${kg(Math.round(b.tonnage / 100) / 10)} t</p>
     </div>`;
 }
 
@@ -989,13 +996,18 @@ function vueSplit(p, sp) {
     <div class="pied"><button class="lien danger" data-action="supprimer-split" data-programme="${p.id}" data-split="${sp.id}">Supprimer ce split</button></div>`;
 }
 
-function valeursParDefaut(mesure) {
-  if (mesure === 'temps') return { sec: 30 };
-  if (mesure === 'cardio') return { min: 20 };
-  if (mesure === 'echauffement') return {};
-  if (mesure === 'pdc') return { reps: 10 };
-  return { kg: 20, reps: 10 };
+// Nouvelle série du modèle : vide par défaut (valeur facultative, à saisir en séance).
+function valeursParDefaut() {
+  return {};
 }
+
+const valChamp = (v) => (v == null || v === '' ? '' : String(v).replace('.', ','));
+const lireFacultatif = (t, entier = false) => {
+  const x = String(t ?? '').trim();
+  if (!x) return null;
+  const n = Math.max(0, num(x));
+  return entier ? Math.round(n) : n;
+};
 
 /** Pourcentage du poids du corps soulevé : valeurs de départ courantes, à ajuster. */
 function pctSuggere(nom) {
@@ -1019,10 +1031,10 @@ function lignesSeries(mesure, series) {
   return series.map((x, i) => `
     <div class="ligne-modele" data-ligne>
       <span class="serie-num">${i + 1}</span>
-      ${mesure === 'charge' ? `<label class="mini-champ"><input name="kg" inputmode="decimal" value="${String(x.kg ?? 0).replace('.', ',')}"><span>kg</span></label>` : ''}
-      ${mesure === 'cardio' ? `<label class="mini-champ"><input name="min" inputmode="decimal" value="${String(x.min ?? 20).replace('.', ',')}"><span>min</span></label>`
-        : mesure === 'temps' ? `<label class="mini-champ"><input name="sec" inputmode="numeric" value="${x.sec ?? 30}"><span>s</span></label>`
-        : `<label class="mini-champ"><input name="reps" inputmode="numeric" value="${x.reps ?? 10}"><span>reps</span></label>`}
+      ${mesure === 'charge' ? `<label class="mini-champ"><input name="kg" inputmode="decimal" value="${valChamp(x.kg)}" placeholder="–"><span>kg</span></label>` : ''}
+      ${mesure === 'cardio' ? `<label class="mini-champ"><input name="min" inputmode="decimal" value="${valChamp(x.min)}" placeholder="–"><span>min</span></label>`
+        : mesure === 'temps' ? `<label class="mini-champ"><input name="sec" inputmode="numeric" value="${valChamp(x.sec)}" placeholder="–"><span>s</span></label>`
+        : `<label class="mini-champ"><input name="reps" inputmode="numeric" value="${valChamp(x.reps)}" placeholder="–"><span>reps</span></label>`}
       ${mesure === 'pdc' ? `<label class="mini-champ lest"><span>+</span><input name="lest" inputmode="decimal" value="${x.lest ? String(x.lest).replace('.', ',') : ''}" placeholder="0"><span>kg</span></label>` : ''}
       <button type="button" class="btn-icone petit" data-f="retirer-ligne" aria-label="Retirer la série">${I.croix}</button>
     </div>`).join('');
@@ -1032,10 +1044,10 @@ function lireLignes(form, mesure) {
   if (mesure === 'echauffement') return [{}];
   return [...form.querySelectorAll('[data-ligne]')].map((l) => {
     const v = (n) => l.querySelector(`[name="${n}"]`)?.value;
-    if (mesure === 'temps') return { sec: Math.max(0, Math.round(num(v('sec')))) };
-    if (mesure === 'cardio') return { min: Math.max(0, num(v('min'))) };
-    if (mesure === 'pdc') return { reps: Math.max(0, Math.round(num(v('reps')))), lest: Math.max(0, num(v('lest') || 0)) };
-    return { kg: Math.max(0, num(v('kg'))), reps: Math.max(0, Math.round(num(v('reps')))) };
+    if (mesure === 'temps') return { sec: lireFacultatif(v('sec'), true) };
+    if (mesure === 'cardio') return { min: lireFacultatif(v('min')) };
+    if (mesure === 'pdc') return { reps: lireFacultatif(v('reps'), true), lest: Math.max(0, num(v('lest') || 0)) };
+    return { kg: lireFacultatif(v('kg')), reps: lireFacultatif(v('reps'), true) };
   });
 }
 
@@ -1051,12 +1063,12 @@ function fenetreModeleExo(p, sp, bloc, exo) {
       <label class="interrupteur"><input type="checkbox" name="uni" ${e.uni ? 'checked' : ''}><span></span>Unilatéral (valeurs par côté)</label>
       <div data-pct ${e.mesure === 'pdc' ? '' : 'hidden'}>${champPct(e)}</div>
       <div data-series ${e.mesure === 'echauffement' ? 'hidden' : ''}>
-        <p class="titre-choix">${e.mesure === 'cardio' ? 'Durée prévue (plusieurs lignes pour un fractionné)' : 'Séries prévues'}</p>
+        <p class="titre-choix">${e.mesure === 'cardio' ? 'Durée prévue (plusieurs lignes pour un fractionné)' : 'Séries prévues'} <small>valeurs facultatives</small></p>
         <div data-lignes>${lignesSeries(e.mesure, e.series)}</div>
         <button type="button" class="lien" data-f="ajouter-ligne">${I.plus} ${e.mesure === 'cardio' ? 'segment' : 'série'}</button>
       </div>
       <p class="aide" data-aide-echauffement ${e.mesure === 'echauffement' ? '' : 'hidden'}>Un échauffement se coche simplement en séance : pas de séries, pas de repos, pas de stats.</p>
-      <label class="champ"><span>Consigne</span><textarea name="note" rows="2" placeholder="Tempo 3-1-1, bras opposé en tension, demi-reps en fin de série…">${esc(e.note)}</textarea></label>
+      <label class="champ"><span>Note</span><textarea name="note" rows="2" placeholder="Tempo 3-1-1, bras opposé en tension, demi-reps en fin de série…">${esc(e.note)}</textarea></label>
       <button class="btn btn-principal btn-large">Enregistrer</button>
       ${nouveau ? '' : '<div class="actions-sec"><button type="button" class="lien danger" data-f="supprimer">Supprimer cet exercice</button></div>'}
     </form>`, (fd, form) => {
@@ -1134,19 +1146,31 @@ const actifs = (b) => b.exos.filter((e) => !e.remplacePar);
 function nbTours(b) { return Math.max(0, ...actifs(b).map((e) => e.series.length)); }
 function blocFini(b) { return actifs(b).every((e) => e.series.length && e.series.every((x) => x.fait)); }
 
+const vide = (v) => v == null || v === '';
+const nb = (v, f = (x) => x) => (vide(v) ? '–' : f(v));
+
+/** Une série dont il manque une valeur à saisir. */
+function serieIncomplete(e, s) {
+  if (e.mesure === 'charge') return vide(s.kg) || vide(s.reps);
+  if (e.mesure === 'pdc') return vide(s.reps);
+  if (e.mesure === 'temps') return vide(s.sec);
+  if (e.mesure === 'cardio') return vide(s.min);
+  return false;
+}
+
 function valeurs(e, s) {
   const u = e.uni ? '<i>/côté</i>' : '';
-  if (e.mesure === 'temps') return `<span class="v"><b>${s.sec ?? 0}</b> s${u}</span>`;
-  if (e.mesure === 'cardio') return `<span class="v"><b>${kg(s.min ?? 0)}</b> min</span>`;
+  if (e.mesure === 'temps') return `<span class="v"><b>${nb(s.sec)}</b> s${u}</span>`;
+  if (e.mesure === 'cardio') return `<span class="v"><b>${nb(s.min, kg)}</b> min</span>`;
   if (e.mesure === 'echauffement') return `<span class="v">${s.fait ? 'Fait' : 'À faire'}</span>`;
-  if (e.mesure === 'pdc') return `<span class="v"><b>${s.reps ?? 0}</b> reps${u}</span>${s.lest ? `<span class="v"><b>+${kg(s.lest)}</b> kg</span>` : ''}`;
-  return `<span class="v v-kg"><b>${kg(s.kg ?? 0)}</b> kg</span><span class="v"><b>${s.reps ?? 0}</b> reps${u}</span>`;
+  if (e.mesure === 'pdc') return `<span class="v"><b>${nb(s.reps)}</b> reps${u}</span>${s.lest ? `<span class="v"><b>+${kg(s.lest)}</b> kg</span>` : ''}`;
+  return `<span class="v v-kg"><b>${nb(s.kg, kg)}</b> kg</span><span class="v"><b>${nb(s.reps)}</b> reps${u}</span>`;
 }
 
 function ligneSerie(b, e, si, numero) {
   const s = e.series[si];
   if (!s) return '';
-  const change = s.prevu && texteSerie(e, s) !== texteSerie(e, s.prevu);
+  const change = s.prevu && !serieIncomplete(e, s.prevu) && texteSerie(e, s) !== texteSerie(e, s.prevu);
   return `
     <div class="serie ${s.fait ? 'faite' : ''}">
       <span class="serie-num">${numero}</span>
@@ -1168,6 +1192,49 @@ function etiquettes(e, s) {
   return t.map((x) => `<span class="etiquette">${esc(x)}</span>`).join('');
 }
 
+/**
+ * Heure de fin d'un bloc : prise au moment où sa dernière série est cochée.
+ * Sa durée part du repère précédent : le dernier bloc terminé avant lui (quel que soit
+ * l'ordre affiché), sinon le début de la séance. Pas de minutage pour une séance saisie
+ * après coup ni en modification.
+ */
+function majFinBloc(s, b) {
+  if (!b || s.passee || s.edition || !s.debut) return;
+  if (!blocFini(b)) { delete b.finA; delete b.duree; return; }
+  if (b.finA) return;
+  b.finA = Date.now();
+  const avant = s.blocs.filter((x) => x !== b && x.finA && x.finA <= b.finA).map((x) => x.finA);
+  const repere = avant.length ? Math.max(...avant) : new Date(s.debut).getTime();
+  b.duree = Math.max(0, Math.round((b.finA - repere) / 1000));
+}
+
+const heureCourte = (ms) => new Date(ms).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+const minutes = (sec) => `${Math.max(1, Math.round(sec / 60))} min`;
+
+/** Estimation enchaînée pour les blocs restants, dans l'ordre affiché. */
+function estimations(s) {
+  const res = new Map();
+  if (!s.debut || s.passee || s.edition) return res;
+  const moy = S.dureesMoyennes(s.programmeId, s.splitId);
+  const fins = s.blocs.filter((b) => b.finA).map((b) => b.finA);
+  let curseur = Math.max(Date.now(), ...fins, new Date(s.debut).getTime());
+  for (const b of s.blocs) {
+    if (!actifs(b).length || blocFini(b)) continue;
+    const m = b.src ? moy.get(b.src) : null;
+    if (!m) { res.set(b.id, { inconnu: true }); continue; }
+    curseur += m * 1000;
+    res.set(b.id, { moyenne: m, fin: curseur });
+  }
+  return res;
+}
+
+function ligneTemps(s, b, est) {
+  if (b.finA && b.duree != null) return `<small class="bloc-temps fini">${I.check}fini à ${heureCourte(b.finA)} · ${minutes(b.duree)}</small>`;
+  const e = est?.get(b.id);
+  if (e?.moyenne) return `<small class="bloc-temps">≈ ${minutes(e.moyenne)} · fin vers ${heureCourte(e.fin)}</small>`;
+  return '';
+}
+
 function resumeBloc(b) {
   let faites = 0, total = 0, ton = 0;
   for (const e of actifs(b)) for (const x of e.series) {
@@ -1177,7 +1244,7 @@ function resumeBloc(b) {
   return `${faites}/${total}${ton ? ` · ${kg(Math.round(ton))} kg` : ''}`;
 }
 
-function carteBloc(s, b) {
+function carteBloc(s, b, est) {
   const tous = s.blocs.flatMap((x) => x.exos);
   const poignee = `<span class="poignee" data-glisser aria-label="Déplacer">${I.poignee}</span>`;
   if (!actifs(b).length) {
@@ -1200,7 +1267,7 @@ function carteBloc(s, b) {
   const tete = `
     <div class="bloc-tete">
       ${poignee}
-      <div class="bloc-titres">${titres}</div>
+      <div class="bloc-titres">${titres}${ligneTemps(s, b, est)}</div>
       <button class="bloc-plier" data-action="plier" data-bloc="${b.id}" aria-label="${b.replie ? 'Déplier' : 'Replier'}" aria-expanded="${!b.replie}">
         ${b.replie ? `<span class="bloc-resume ${fini ? 'fini' : ''}">${fini ? I.check : ''}${resumeBloc(b)}</span>` : (b.repos ? `<span class="bloc-repos">${I.chrono}${duree(b.repos)}</span>` : '')}
         <span class="chevron">${b.replie ? I.bas : I.haut}</span>
@@ -1246,7 +1313,7 @@ function vueSeance() {
     </header>
     ${s.debut ? '' : '<p class="aide centre">Ajuste ce que tu veux avant : le temps ne part qu\'au démarrage.</p>'}
 
-    <div class="blocs" data-liste="blocs">${s.blocs.map((bl) => carteBloc(s, bl)).join('')}</div>
+    <div class="blocs" data-liste="blocs">${(() => { const est = estimations(s); return s.blocs.map((bl) => carteBloc(s, bl, est)).join(''); })()}</div>
 
     <button class="ajout" data-action="ajouter-exo">${I.plus} Ajouter un exercice</button>
     ${s.debut ? `<button class="btn btn-principal btn-large" data-action="terminer">${s.edition ? 'Enregistrer les modifications' : 'Terminer la séance'}</button>` : ''}
@@ -1415,7 +1482,7 @@ function stepper(nom, libelle, valeur, pas, unite) {
       <span class="stepper-lib">${libelle}</span>
       <div class="stepper-ligne">
         <button type="button" class="btn-icone" data-pas="-${pas}" data-champ="${nom}" aria-label="Moins">${I.moins}</button>
-        <label class="stepper-champ"><input name="${nom}" inputmode="decimal" value="${String(valeur ?? 0).replace('.', ',')}" autocomplete="off"><span>${unite}</span></label>
+        <label class="stepper-champ"><input name="${nom}" inputmode="decimal" value="${valeur == null ? '' : String(valeur).replace('.', ',')}" placeholder="0" autocomplete="off"><span>${unite}</span></label>
         <button type="button" class="btn-icone" data-pas="${pas}" data-champ="${nom}" aria-label="Plus">${I.plus}</button>
       </div>
     </div>`;
@@ -1477,6 +1544,7 @@ function fenetreSerie(s, blocId, exoId, i) {
     Object.assign(v, lireMesure(fd, e.mesure), { fait: true });
     s.dernierBloc = blocId;
     if (!s.debut) S.lancer(s);
+    majFinBloc(s, s.blocs.find((x) => x.id === blocId));
     S.enregistrer(); fermer(); vueSeance();
   });
   // Mini chrono des exercices en temps : à l'arrêt, les secondes s'inscrivent dans le champ.
@@ -1509,11 +1577,12 @@ function fenetreSerie(s, blocId, exoId, i) {
   }
   couche.querySelector('[data-f="supprimer"]').onclick = () => {
     e.series.splice(i, 1);
+    majFinBloc(s, s.blocs.find((x) => x.id === blocId));
     S.enregistrer(); fermer(); vueSeance();
     toast('Série retirée');
   };
   const d = couche.querySelector('[data-f="defaire"]');
-  if (d) d.onclick = () => { v.fait = false; delete v.faitA; S.enregistrer(); fermer(); vueSeance(); };
+  if (d) d.onclick = () => { v.fait = false; delete v.faitA; majFinBloc(s, s.blocs.find((x) => x.id === blocId)); S.enregistrer(); fermer(); vueSeance(); };
 }
 
 function choixMesure(actuelle) {
@@ -1529,7 +1598,7 @@ function fenetreExo(s, blocId, exoId) {
   ouvrirFenetre(`
     <form>
       <h2>Modifier l'exercice</h2>
-      <p class="aide">Pour cette séance seulement : le modèle du split ne change pas.</p>
+      <p class="aide">Nom, mesure et unilatéral : pour cette séance seulement. La note, elle, est gardée pour les prochaines séances.</p>
       <label class="champ"><span>Nom</span><input name="nom" value="${esc(e.nom)}" required autocapitalize="sentences"></label>
       ${choixMesure(e.mesure)}
       <label class="interrupteur"><input type="checkbox" name="uni" ${e.uni ? 'checked' : ''}><span></span>Unilatéral (valeurs par côté)</label>
@@ -1542,6 +1611,9 @@ function fenetreExo(s, blocId, exoId) {
     if (mesure !== e.mesure) e.series.forEach((x) => { if (mesure === 'cardio' && x.min == null) x.min = 20; if (mesure === 'temps' && x.sec == null) x.sec = 30; if (mesure !== 'temps' && x.reps == null) x.reps = 10; if (mesure === 'charge' && x.kg == null) x.kg = 0; });
     const pctTxt = String(fd.get('pct') || '').trim();
     Object.assign(e, { nom: majuscule(fd.get('nom')) || e.nom, mesure, uni: fd.get('uni') === 'on', note: fd.get('note').trim(), pct: mesure === 'pdc' && pctTxt ? num(pctTxt) : null });
+    // La note est transversale : elle repart dans le modèle et suit les prochaines séances.
+    const modele = e.src && S.exoModele(s.programmeId, s.splitId, e.src);
+    if (modele) modele.note = e.note;
     S.enregistrer(); fermer(); vueSeance();
   });
   const fe = couche.querySelector('form');
@@ -1847,8 +1919,10 @@ app.addEventListener('click', (ev) => {
     case 'cocher': {
       const { e } = trouver(s, d.bloc, d.exo);
       const v = e.series[+d.i];
+      if (!v.fait && serieIncomplete(e, v)) return fenetreSerie(s, d.bloc, d.exo, +d.i);
       v.fait = !v.fait;
       if (v.fait) { v.faitA = Date.now(); s.dernierBloc = d.bloc; if (!s.debut) S.lancer(s); } else delete v.faitA;
+      majFinBloc(s, s.blocs.find((x) => x.id === d.bloc));
       S.enregistrer();
       return vueSeance();
     }
@@ -1858,8 +1932,9 @@ app.addEventListener('click', (ev) => {
       const b = s.blocs.find((x) => x.id === d.bloc);
       actifs(b).forEach((e) => {
         const der = e.series[e.series.length - 1] || {};
-        e.series.push({ prevu: null, kg: der.kg, reps: der.reps, sec: der.sec, fait: false });
+        e.series.push({ prevu: null, kg: der.kg, reps: der.reps, sec: der.sec, min: der.min, lest: der.lest || 0, fait: false });
       });
+      majFinBloc(s, b);
       S.enregistrer();
       return vueSeance();
     }
@@ -1873,7 +1948,7 @@ app.addEventListener('click', (ev) => {
         e.series.splice(i >= 0 ? i : e.series.length - 1, 1);
         retire = true;
       });
-      if (retire) { S.enregistrer(); vueSeance(); toast('Série retirée'); }
+      if (retire) { majFinBloc(s, b); S.enregistrer(); vueSeance(); toast('Série retirée'); }
       return;
     }
     case 'ajouter-exo': return fenetreAjout(s);

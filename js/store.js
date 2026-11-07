@@ -163,7 +163,7 @@ export function bilanProgramme(p, jusqua = p.fin || aujourdhui()) {
   });
   return {
     seances: l.length, jours, tonnage, activites: activitesDe(p).length,
-    parSemaine: jours ? (l.length / jours) * 7 : 0,
+    parSemaine: jours ? ((l.length + activitesDe(p).length) / jours) * 7 : 0,
     moyenne: l.length ? tonnage / l.length : 0,
     dureeMoyenne: l.length ? bilans.reduce((a, b) => a + b.dureeSec, 0) / l.length : 0,
     reposMoyen: repos.length ? repos.reduce((a, b) => a + b.reposMoyen, 0) / repos.length : 0,
@@ -377,4 +377,27 @@ export function propagerPct(exoModeleId, pct) {
   }
   enregistrer();
   return n;
+}
+
+// --- Durée des exercices -------------------------------------------------------------------
+
+/** Durée moyenne (s) de chaque bloc du modèle, sur les séances terminées de ce split. */
+export function dureesMoyennes(programmeId, splitId) {
+  const sommes = new Map();
+  for (const s of seancesDe(programmeId)) {
+    if (s.splitId !== splitId) continue;
+    for (const b of s.blocs) {
+      if (!b.src || !b.duree) continue;
+      const m = sommes.get(b.src) || { t: 0, n: 0 };
+      m.t += b.duree; m.n += 1;
+      sommes.set(b.src, m);
+    }
+  }
+  return new Map([...sommes].map(([k, m]) => [k, m.t / m.n]));
+}
+
+/** Exercice du modèle d'un split (pour y reporter une note prise en séance). */
+export function exoModele(programmeId, splitId, exoId) {
+  const sp = programme(programmeId)?.splits.find((x) => x.id === splitId);
+  return sp?.blocs.flatMap((b) => b.exos).find((e) => e.id === exoId) || null;
 }

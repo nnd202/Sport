@@ -50,8 +50,7 @@ export function texteDonnees(p, seances, b, activites = [], corps = []) {
   const out = [`SPORT — ${nomCycle(p).toUpperCase()} — DONNÉES`];
   out.push(p.debut ? `Du ${dateCourte(p.debut)} au ${dateCourte(p.fin || aujourdhui())}${p.fin ? '' : ' (en cours)'}` : 'Pas encore commencé', '');
   out.push(ligne, 'BILAN', ligne);
-  if (b.activites) out.push(`${b.activites} activité${b.activites > 1 ? 's' : ''} libre${b.activites > 1 ? 's' : ''} en plus des séances`);
-  out.push(`${b.seances} séance${b.seances > 1 ? "s" : ""} en ${b.jours} jour${b.jours > 1 ? "s" : ""}, soit ${b.parSemaine.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} par semaine`);
+  out.push(`${b.seances + (b.activites || 0)} séance${b.seances + (b.activites || 0) > 1 ? "s" : ""}${b.activites ? ` dont ${b.activites} libre${b.activites > 1 ? "s" : ""}` : ""} en ${b.jours} jour${b.jours > 1 ? "s" : ""}, soit ${b.parSemaine.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} par semaine`);
   if (b.seances) {
     out.push(`Durée moyenne d'une séance : ${dureeSeance(b.dureeMoyenne)}`);
     out.push(`Tonnage moyen par séance : ${kg(Math.round(b.moyenne))} kg`);
