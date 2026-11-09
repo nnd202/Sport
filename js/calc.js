@@ -38,8 +38,23 @@ export function dateCourte(iso) {
 
 export const kg = (n) => (Math.round(n * 100) / 100).toLocaleString('fr-FR');
 
+/** Texte des paliers dégressifs : « ↘ 27,5 × 6 ↘ 12,5 × 8 ». */
+export function textePaliers(exo, s) {
+  if (!s.paliers?.length) return '';
+  return s.paliers.map((p) => (exo.mesure === 'pdc'
+    ? ` ↘ ${p.reps ?? '–'} reps${p.lest ? ` +${kg(p.lest)} kg` : ''}`
+    : ` ↘ ${p.kg == null ? '–' : kg(p.kg)} × ${p.reps ?? '–'}`)).join('');
+}
+
 /** Texte d'une série : « 45 kg × 12 », « 45 s », « 10 reps », « 10 reps +10 kg ». */
 export function texteSerie(exo, s) {
+  return texteSerieSimple(exo, s) + textePaliers(exo, s);
+}
+
+/** Les dégressives n'ont de sens que pour la charge et le poids du corps (lest). */
+export const accepteDegressif = (exo) => exo.mesure === 'charge' || exo.mesure === 'pdc';
+
+function texteSerieSimple(exo, s) {
   if (exo.mesure === 'temps') return `${s.sec ?? '–'} s`;
   if (exo.mesure === 'cardio') return `${s.min == null ? '–' : kg(s.min)} min`;
   if (exo.mesure === 'echauffement') return 'fait';
@@ -70,9 +85,12 @@ export function volumeSerie(exo, s, date) {
   if (exo.mesure === 'temps') return (s.sec || 0) * cotes;
   if (exo.mesure === 'cardio') return s.min || 0;
   if (exo.mesure === 'echauffement') return 0;
-  const c = chargeRep(exo, s, date);
-  if (c == null) return (s.reps || 0) * cotes;
-  return c * (s.reps || 0) * cotes;
+  // La série et ses paliers dégressifs : chacun avec sa charge et ses reps.
+  const morceaux = [s, ...(accepteDegressif(exo) ? s.paliers || [] : [])];
+  return morceaux.reduce((t, m) => {
+    const c = chargeRep(exo, m, date);
+    return t + (c == null ? (m.reps || 0) : c * (m.reps || 0)) * cotes;
+  }, 0);
 }
 
 /** L'exercice se compte-t-il en kg (tonnage) à cette date ? */
@@ -108,6 +126,23 @@ export function bilan(seance) {
  * Chaque série est préremplie avec ce qui a été fait la dernière fois (même exercice, même rang),
  * sinon avec la valeur prévue du modèle.
  */
+const copiePrevu = (p) => ({ ...p, paliers: p.paliers ? p.paliers.map((x) => ({ ...x })) : undefined });
+
+/**
+ * Paliers dégressifs d'une nouvelle série.
+ * Prévus dans le modèle : toujours présents, avec les valeurs de la dernière fois si elles existent.
+ * Ajoutés à la volée : repris tels qu'à la dernière séance (retirés = absents).
+ */
+function paliersDepart(prevu, avant) {
+  const modele = prevu.paliers || [];
+  const derniers = avant?.paliers || [];
+  const n = Math.max(modele.length, derniers.length);
+  return Array.from({ length: n }, (_, k) => {
+    const m = modele[k] || {}, d = derniers[k] || {};
+    return { kg: d.kg ?? m.kg, reps: d.reps ?? m.reps, lest: d.lest ?? m.lest };
+  });
+}
+
 export function nouvelleSeance(programme, split, derniere) {
   const passe = new Map();
   if (derniere) for (const b of derniere.blocs) for (const e of b.exos) if (e.src && !e.remplace) passe.set(e.src, e);
@@ -142,7 +177,7 @@ export function nouvelleSeance(programme, split, derniere) {
           series: e.series.map((p, i) => {
             const v = avant?.series[i] ?? avant?.series[avant.series.length - 1];
             const base = v ? { kg: v.kg, reps: v.reps, sec: v.sec, lest: v.lest, min: v.min } : p;
-            return { prevu: { ...p }, kg: base.kg, reps: base.reps, sec: base.sec, min: base.min, lest: base.lest || 0, fait: false };
+            return { prevu: copiePrevu(p), kg: base.kg, reps: base.reps, sec: base.sec, min: base.min, lest: base.lest || 0, paliers: paliersDepart(p, avant?.series[i]), fait: false };
           }),
         };
       }),

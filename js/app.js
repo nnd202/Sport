@@ -1,6 +1,6 @@
 // Interface de Sport : accueil, séance, récap, chrono, fenêtres de saisie.
 import * as S from './store.js';
-import { uid, duree, dureeSeance, dateCourte, kg, texteSerie, bilan, MESURES, aujourdhui, enKg, volumeSerie } from './calc.js';
+import { uid, duree, dureeSeance, dateCourte, kg, texteSerie, bilan, MESURES, aujourdhui, enKg, volumeSerie, accepteDegressif } from './calc.js';
 import { COULEURS_SPLITS } from './demo.js';
 import * as X from './export.js';
 import * as ST from './stats.js';
@@ -1026,28 +1026,68 @@ function champPct(e) {
     <p class="aide">Ex. pompes ≈ 70 %, dips ≈ 92 %, tractions ≈ 95 %. Vide = compté en répétitions. Le lest (+ kg) se règle par série.</p>`;
 }
 
+// --- Dégressives : paliers d'une série (charge, ou lest pour le poids du corps) ---------
+
+function lignePalier(mesure, p = {}) {
+  return `<div class="ligne-palier" data-palier>
+    <span class="fleche">↘</span>
+    ${mesure === 'pdc'
+      ? `<label class="mini-champ"><input name="p-reps" inputmode="numeric" value="${valChamp(p.reps)}" placeholder="–"><span>reps</span></label>
+         <label class="mini-champ lest"><span>+</span><input name="p-lest" inputmode="decimal" value="${p.lest ? valChamp(p.lest) : ''}" placeholder="0"><span>kg</span></label>`
+      : `<label class="mini-champ"><input name="p-kg" inputmode="decimal" value="${valChamp(p.kg)}" placeholder="–"><span>kg</span></label>
+         <label class="mini-champ"><input name="p-reps" inputmode="numeric" value="${valChamp(p.reps)}" placeholder="–"><span>reps</span></label>`}
+    <button type="button" class="btn-icone petit" data-f="retirer-palier" aria-label="Retirer cette dégressive">${I.croix}</button>
+  </div>`;
+}
+
+function lirePaliers(conteneur, mesure) {
+  if (!conteneur) return [];
+  return [...conteneur.querySelectorAll('[data-palier]')].map((l) => {
+    const v = (n) => l.querySelector(`[name="${n}"]`)?.value;
+    return mesure === 'pdc'
+      ? { reps: lireFacultatif(v('p-reps'), true), lest: Math.max(0, num(v('p-lest') || 0)) }
+      : { kg: lireFacultatif(v('p-kg')), reps: lireFacultatif(v('p-reps'), true) };
+  }).filter((x) => x.kg != null || x.reps != null || x.lest);
+}
+
+/** Ajoute un palier : charge proposée = celle du palier précédent, sinon celle de la série. */
+function ajouterPalier(conteneur, mesure, chargeSerie) {
+  const derniers = lirePaliers(conteneur, mesure);
+  const prec = derniers[derniers.length - 1];
+  const p = mesure === 'pdc' ? { lest: prec?.lest ?? 0 } : { kg: prec?.kg ?? chargeSerie ?? null };
+  conteneur.insertAdjacentHTML('beforeend', lignePalier(mesure, p));
+  conteneur.querySelector('[data-palier]:last-child input')?.focus();
+}
+
 function lignesSeries(mesure, series) {
   if (mesure === 'echauffement') return '';
+  const deg = mesure === 'charge' || mesure === 'pdc';
   return series.map((x, i) => `
-    <div class="ligne-modele" data-ligne>
+    <div class="groupe-serie" data-ligne>
+    <div class="ligne-modele">
       <span class="serie-num">${i + 1}</span>
       ${mesure === 'charge' ? `<label class="mini-champ"><input name="kg" inputmode="decimal" value="${valChamp(x.kg)}" placeholder="–"><span>kg</span></label>` : ''}
       ${mesure === 'cardio' ? `<label class="mini-champ"><input name="min" inputmode="decimal" value="${valChamp(x.min)}" placeholder="–"><span>min</span></label>`
         : mesure === 'temps' ? `<label class="mini-champ"><input name="sec" inputmode="numeric" value="${valChamp(x.sec)}" placeholder="–"><span>s</span></label>`
         : `<label class="mini-champ"><input name="reps" inputmode="numeric" value="${valChamp(x.reps)}" placeholder="–"><span>reps</span></label>`}
       ${mesure === 'pdc' ? `<label class="mini-champ lest"><span>+</span><input name="lest" inputmode="decimal" value="${x.lest ? String(x.lest).replace('.', ',') : ''}" placeholder="0"><span>kg</span></label>` : ''}
+      ${deg ? '<button type="button" class="btn-icone petit degr" data-f="ajouter-palier" aria-label="Ajouter une dégressive">↘</button>' : ''}
       <button type="button" class="btn-icone petit" data-f="retirer-ligne" aria-label="Retirer la série">${I.croix}</button>
+    </div>
+    <div data-paliers>${deg ? (x.paliers || []).map((p) => lignePalier(mesure, p)).join('') : ''}</div>
     </div>`).join('');
 }
 
 function lireLignes(form, mesure) {
   if (mesure === 'echauffement') return [{}];
   return [...form.querySelectorAll('[data-ligne]')].map((l) => {
-    const v = (n) => l.querySelector(`[name="${n}"]`)?.value;
+    const v = (n) => l.querySelector(`.ligne-modele [name="${n}"]`)?.value;
+    const paliers = lirePaliers(l.querySelector('[data-paliers]'), mesure);
+    const avecPaliers = (o) => (paliers.length ? { ...o, paliers } : o);
     if (mesure === 'temps') return { sec: lireFacultatif(v('sec'), true) };
     if (mesure === 'cardio') return { min: lireFacultatif(v('min')) };
-    if (mesure === 'pdc') return { reps: lireFacultatif(v('reps'), true), lest: Math.max(0, num(v('lest') || 0)) };
-    return { kg: lireFacultatif(v('kg')), reps: lireFacultatif(v('reps'), true) };
+    if (mesure === 'pdc') return avecPaliers({ reps: lireFacultatif(v('reps'), true), lest: Math.max(0, num(v('lest') || 0)) });
+    return avecPaliers({ kg: lireFacultatif(v('kg')), reps: lireFacultatif(v('reps'), true) });
   });
 }
 
@@ -1099,7 +1139,15 @@ function fenetreModeleExo(p, sp, bloc, exo) {
   };
   zone.addEventListener('click', (ev) => {
     const r = ev.target.closest('[data-f="retirer-ligne"]');
-    if (r) { r.closest('[data-ligne]').remove(); renumeroter(); }
+    if (r) { r.closest('[data-ligne]').remove(); renumeroter(); return; }
+    const ap = ev.target.closest('[data-f="ajouter-palier"]');
+    if (ap) {
+      const g = ap.closest('[data-ligne]');
+      ajouterPalier(g.querySelector('[data-paliers]'), form.elements.mesure.value, lireFacultatif(g.querySelector('.ligne-modele [name="kg"]')?.value));
+      return;
+    }
+    const rp = ev.target.closest('[data-f="retirer-palier"]');
+    if (rp) rp.closest('[data-palier]').remove();
   });
   form.elements.mesure.addEventListener('change', () => {
     const mesure = form.elements.mesure.value;
@@ -1178,7 +1226,12 @@ function ligneSerie(b, e, si, numero) {
         ${valeurs(e, s)}${change ? '<span class="modifie" title="Différent du prévu"></span>' : ''}
       </button>
       <button class="coche" data-action="cocher" data-bloc="${b.id}" data-exo="${e.id}" data-i="${si}" aria-label="Valider la série">${I.check}</button>
-    </div>`;
+    </div>
+    ${accepteDegressif(e) && s.paliers?.length ? `<button class="paliers-serie ${s.fait ? 'faite' : ''}" data-action="editer-serie" data-bloc="${b.id}" data-exo="${e.id}" data-i="${si}">
+      ${s.paliers.map((p) => `<span class="palier">↘ ${e.mesure === 'pdc'
+        ? `<b>${nb(p.reps)}</b> reps${p.lest ? ` +${kg(p.lest)} kg` : ''}`
+        : `<b>${nb(p.kg, kg)}</b> kg × <b>${nb(p.reps)}</b>`}</span>`).join('')}
+    </button>` : ''}`;
 }
 
 function etiquettes(e, s) {
@@ -1529,6 +1582,10 @@ function fenetreSerie(s, blocId, exoId, i) {
       <h2>${esc(e.nom)} <small>série ${i + 1}</small></h2>
       ${v.prevu ? `<p class="aide">Prévu : ${texteSerie(e, v.prevu)}${e.uni ? ' par côté' : ''}</p>` : ''}
       ${champsMesure(e.mesure, v)}
+      ${accepteDegressif(e) ? `<div class="degressives">
+        <div data-paliers>${(v.paliers || []).map((p) => lignePalier(e.mesure, p)).join('')}</div>
+        <button type="button" class="lien" data-f="ajouter-palier">↘ Ajouter une dégressive</button>
+      </div>` : ''}
       ${e.mesure === 'temps' ? `<div class="mini-chrono">
         <div class="mini-temps" data-mini>${chronoTexte(0)}</div>
         <button type="button" class="mini-btn" data-f="mini-chrono" aria-label="Chronométrer">${I.play}</button>
@@ -1542,10 +1599,17 @@ function fenetreSerie(s, blocId, exoId, i) {
     </form>`, (fd) => {
     if (!v.fait) v.faitA = Date.now();
     Object.assign(v, lireMesure(fd, e.mesure), { fait: true });
+    if (accepteDegressif(e)) v.paliers = lirePaliers(couche.querySelector('.degressives [data-paliers]'), e.mesure);
     s.dernierBloc = blocId;
     if (!s.debut) S.lancer(s);
     majFinBloc(s, s.blocs.find((x) => x.id === blocId));
     S.enregistrer(); fermer(); vueSeance();
+  });
+  const deg = couche.querySelector('.degressives');
+  if (deg) deg.addEventListener('click', (ev) => {
+    if (ev.target.closest('[data-f="ajouter-palier"]')) ajouterPalier(deg.querySelector('[data-paliers]'), e.mesure, lireFacultatif(couche.querySelector('[name="kg"]')?.value));
+    const rp = ev.target.closest('[data-f="retirer-palier"]');
+    if (rp) rp.closest('[data-palier]').remove();
   });
   // Mini chrono des exercices en temps : à l'arrêt, les secondes s'inscrivent dans le champ.
   const mc = couche.querySelector('[data-f="mini-chrono"]');
@@ -1932,7 +1996,7 @@ app.addEventListener('click', (ev) => {
       const b = s.blocs.find((x) => x.id === d.bloc);
       actifs(b).forEach((e) => {
         const der = e.series[e.series.length - 1] || {};
-        e.series.push({ prevu: null, kg: der.kg, reps: der.reps, sec: der.sec, min: der.min, lest: der.lest || 0, fait: false });
+        e.series.push({ prevu: null, kg: der.kg, reps: der.reps, sec: der.sec, min: der.min, lest: der.lest || 0, paliers: (der.paliers || []).map((x) => ({ ...x })), fait: false });
       });
       majFinBloc(s, b);
       S.enregistrer();

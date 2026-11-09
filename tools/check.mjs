@@ -63,4 +63,16 @@ const vt = trac.series.reduce((a, x) => a + volumeSerie(trac, x, '2026-10-05'), 
 vt === 760 + 860 ? ok('tractions : 95 % de 80 kg, puis +10 kg de lest') : ko(`tractions ${vt}`);
 volumeSerie(trac, trac.series[0], '2026-09-01') === 10 ? ok('sans pesée : compté en répétitions') : ko('sans pesée');
 
+// 5. Dégressives : paliers comptés dans le tonnage, reportés à la séance suivante.
+const deg = { mesure: 'charge', series: [{ kg: 52.5, reps: 10, fait: true, paliers: [{ kg: 27.5, reps: 6 }, { kg: 12.5, reps: 8 }] }] };
+volumeSerie(deg, deg.series[0]) === 790 ? ok('dégressives : 52,5 × 10 + 27,5 × 6 + 12,5 × 8 = 790 kg') : ko(`dégressives ${volumeSerie(deg, deg.series[0])}`);
+const sd = nouvelleSeance(p, legs, null);
+sd.blocs[0].exos[0].series[0].paliers = [{ kg: 30, reps: 8 }];
+const sd2 = nouvelleSeance(p, legs, sd);
+sd2.blocs[0].exos[0].series[0].paliers.length === 1 && sd2.blocs[0].exos[0].series[1].paliers.length === 0 ? ok('dégressive à la volée reportée à la séance suivante') : ko('report dégressive');
+const modeleDeg = programmeDemo();
+modeleDeg.splits[0].blocs[0].exos[0].series[0].paliers = [{ kg: 40, reps: 8 }];
+const sm = nouvelleSeance(modeleDeg, modeleDeg.splits[0], sd);
+sm.blocs[0].exos[0].series[0].paliers[0].kg === 30 && nouvelleSeance(modeleDeg, modeleDeg.splits[0], null).blocs[0].exos[0].series[0].paliers.length === 1 ? ok('dégressive du modèle toujours présente') : ko('dégressive modèle');
+
 process.exit(erreurs ? 1 : 0);

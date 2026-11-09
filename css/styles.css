@@ -452,3 +452,17 @@ svg.graphe text { stroke: none; }
 .chrono-reset { height: 64px; }
 .espace-chrono { height: calc(130px + env(safe-area-inset-bottom)); }
 .toast { bottom: calc(130px + env(safe-area-inset-bottom)); }
+
+/* Dégressives */
+.groupe-serie { margin-bottom: 6px; }
+.groupe-serie .ligne-modele { margin-bottom: 0; }
+.ligne-palier { display: flex; align-items: center; gap: 8px; margin: 5px 0 0 22px; }
+.ligne-palier .fleche { color: var(--accent); font-weight: 700; width: 14px; text-align: center; }
+.ligne-palier .mini-champ input { font-size: 15px; }
+.btn-icone.degr { color: var(--accent); font-weight: 700; font-size: 17px; background: var(--pale-2); }
+.degressives { display: flex; flex-direction: column; gap: 2px; margin-top: -4px; }
+.degressives .ligne-palier { margin-left: 4px; }
+.degressives .lien { align-self: flex-start; }
+.paliers-serie { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; text-align: left; padding: 0 0 6px 34px; margin-top: -4px; font-size: 13px; color: var(--texte-3); font-variant-numeric: tabular-nums; }
+.paliers-serie b { color: var(--texte-2); font-weight: 600; }
+.paliers-serie.faite b { color: var(--accent); }
