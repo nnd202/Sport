@@ -466,3 +466,13 @@ svg.graphe text { stroke: none; }
 .paliers-serie { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; text-align: left; padding: 0 0 6px 34px; margin-top: -4px; font-size: 13px; color: var(--texte-3); font-variant-numeric: tabular-nums; }
 .paliers-serie b { color: var(--texte-2); font-weight: 600; }
 .paliers-serie.faite b { color: var(--accent); }
+
+/* Tonnage du bloc comparé à la séance précédente */
+.bloc-ton { display: block; font-size: 12px; color: var(--texte-3); font-variant-numeric: tabular-nums; margin-top: 2px; }
+.bloc-ton b { color: var(--texte-2, #5a6270); font-weight: 650; }
+.bloc-ton.atteint b, .bloc-ton.atteint .ecart { color: var(--accent); }
+.bloc-ton + .bloc-temps { display: flex; }
+.ton-avant { font-size: 12px; opacity: .8; font-weight: 500; }
+.bandeau-chiffres .ton-avant { color: rgba(255,255,255,.8); font-size: 13px; opacity: 1; }
+.action-tete span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.actions-tete[style*="repeat(4"] .action-tete { font-size: 11.5px; letter-spacing: -.1px; }

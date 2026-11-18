@@ -1,7 +1,7 @@
 // Vérifications avant publication : node tools/check.mjs
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { nouvelleSeance, bilan, volumeSerie, definirPoids } from '../js/calc.js';
+import { nouvelleSeance, bilan, volumeSerie, definirPoids, dateCourte, dateNum } from '../js/calc.js';
 import { programmeDemo } from '../js/demo.js';
 import { couloirs, ressentiPerformance } from '../js/stats.js';
 import { graduations } from '../js/graph.js';
@@ -74,5 +74,9 @@ const modeleDeg = programmeDemo();
 modeleDeg.splits[0].blocs[0].exos[0].series[0].paliers = [{ kg: 40, reps: 8 }];
 const sm = nouvelleSeance(modeleDeg, modeleDeg.splits[0], sd);
 sm.blocs[0].exos[0].series[0].paliers[0].kg === 30 && nouvelleSeance(modeleDeg, modeleDeg.splits[0], null).blocs[0].exos[0].series[0].paliers.length === 1 ? ok('dégressive du modèle toujours présente') : ko('dégressive modèle');
+
+const an = new Date().getFullYear();
+dateCourte(`${an}-06-12`).split('/').length === 2 && dateCourte(`${an - 1}-06-12`).endsWith(`/${an - 1}`) && dateNum('2025-06-12') === '12/06/2025'
+  ? ok("année affichée hors de l'année en cours, toujours dans les mensurations") : ko(`dates ${dateCourte(`${an - 1}-06-12`)} ${dateNum('2025-06-12')}`);
 
 process.exit(erreurs ? 1 : 0);

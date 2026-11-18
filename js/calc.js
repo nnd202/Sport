@@ -30,11 +30,19 @@ export function dureeSeance(sec) {
   return m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}` : `${m} min`;
 }
 
-export function dateCourte(iso) {
+/**
+ * « lun 03/11 ». L'année s'ajoute d'elle-même quand ce n'est pas l'année en cours (« lun 03/11/2025 »).
+ * annee : true pour la forcer (mensurations), false pour l'omettre (étiquettes serrées).
+ */
+export function dateCourte(iso, annee = 'auto') {
   const d = new Date(`${iso}T12:00:00`);
   const j = d.toLocaleDateString('fr-FR', { weekday: 'short' }).replace('.', '');
-  return `${j} ${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const avec = annee === true || (annee === 'auto' && d.getFullYear() !== new Date().getFullYear());
+  return `${j} ${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}${avec ? `/${d.getFullYear()}` : ''}`;
 }
+
+/** « 03/11/2025 » : date sans jour, avec l'année. */
+export const dateNum = (iso) => dateCourte(iso, true).split(' ')[1];
 
 export const kg = (n) => (Math.round(n * 100) / 100).toLocaleString('fr-FR');
 

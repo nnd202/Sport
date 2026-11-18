@@ -40,6 +40,13 @@ export function derniereDuSplit(programmeId, splitId) {
   return l[l.length - 1] || null;
 }
 
+/** Séance terminée du même split juste avant s (pour comparer le tonnage). */
+export function precedente(s) {
+  const cle = (x) => x.date + (x.debut || '');
+  const l = seancesDe(s.programmeId).filter((x) => x.splitId === s.splitId && x.id !== s.id && cle(x) < cle(s));
+  return l[l.length - 1] || null;
+}
+
 // Ouvre une séance sans lancer le temps : on peut l'ajuster avant de commencer.
 export function ouvrir(programmeId, splitId) {
   const p = programme(programmeId);

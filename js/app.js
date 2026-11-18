@@ -1,6 +1,6 @@
 // Interface de Sport : accueil, séance, récap, chrono, fenêtres de saisie.
 import * as S from './store.js';
-import { uid, duree, dureeSeance, dateCourte, kg, texteSerie, bilan, MESURES, aujourdhui, enKg, volumeSerie, accepteDegressif } from './calc.js';
+import { uid, duree, dureeSeance, dateCourte, dateNum, kg, texteSerie, bilan, MESURES, aujourdhui, enKg, volumeSerie, accepteDegressif } from './calc.js';
 import { COULEURS_SPLITS } from './demo.js';
 import * as X from './export.js';
 import * as ST from './stats.js';
@@ -37,6 +37,7 @@ const I = {
   reglages: '<svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>',
   calendrier: '<svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2.5"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>',
   stats: '<svg viewBox="0 0 24 24"><path d="M5 20V11M12 20V5M19 20v-6"/></svg>',
+  lieu: '<svg viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>',
   regle: '<svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="8" rx="2"/><path d="M7 8v3M11 8v4M15 8v3M19 8v2"/></svg>',
   poignee: '<svg viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.5" class="plein"/><circle cx="15" cy="6" r="1.5" class="plein"/><circle cx="9" cy="12" r="1.5" class="plein"/><circle cx="15" cy="12" r="1.5" class="plein"/><circle cx="9" cy="18" r="1.5" class="plein"/><circle cx="15" cy="18" r="1.5" class="plein"/></svg>',
 };
@@ -171,7 +172,7 @@ function vueAccueil() {
   app.innerHTML = `
     <header class="bandeau-tete">
       <div class="bandeau-ligne"><div class="bandeau-titre"><small>${jour}</small><h1>Mes programmes</h1></div></div>
-      ${actions([['programmes', 'reglages', 'Gérer'], ['mensurations', 'regle', 'Mensurations'], ['sauvegarder', 'partage', 'Exporter']])}
+      ${actions([['programmes', 'reglages', 'Gérer'], ['mensurations', 'regle', 'Corps'], ['salle', 'lieu', 'Salle'], ['sauvegarder', 'partage', 'Exporter']])}
     </header>
 
     ${enCours.length ? `<h3 class="titre-section">En cours</h3><ul class="liste-programmes">${enCours.map((p) => carteProgramme(p, true)).join('')}</ul>`
@@ -669,7 +670,7 @@ function vueCorps() {
     const der = serie[serie.length - 1];
     const ecart = serie.length > 1 ? der.valeur - serie[0].valeur : null;
     return `<li><button class="ligne-couloir" data-action="point-corps" data-id="${pt.id}">
-      <span class="lc-nom"><strong>${esc(pt.nom)}</strong><small>${der ? (serie.length > 1 ? `depuis le ${dateCourte(serie[0].date).slice(-5)}` : dateCourte(der.date)) : 'pas encore mesuré'}</small></span>
+      <span class="lc-nom"><strong>${esc(pt.nom)}</strong><small>${der ? (serie.length > 1 ? `depuis le ${dateNum(serie[0].date)}` : dateCourte(der.date, true)) : 'pas encore mesuré'}</small></span>
       ${serie.length > 1 ? G.mini(serie.map((x) => x.valeur)) : ''}
       <span class="lc-val">${der ? `<b>${kg(der.valeur)} ${pt.unite}</b><small>${ecart != null ? signe(ecart, pt.unite) : ''}</small>` : ''}</span>
     </button></li>`;
@@ -705,7 +706,7 @@ function vueCorps() {
       <ul class="historique">${c.mesures.slice().reverse().map((m) => {
         const n = Object.keys(m.valeurs).length;
         return `<li><button class="ligne-histo mesure" data-action="mesure" data-id="${m.id}">
-          <span class="histo-texte"><strong>${dateCourte(m.date)}</strong><small>${n} valeur${n > 1 ? 's' : ''}${m.note ? ` · ${esc(m.note)}` : ''}</small></span>
+          <span class="histo-texte"><strong>${dateCourte(m.date, true)}</strong><small>${n} valeur${n > 1 ? 's' : ''}${m.note ? ` · ${esc(m.note)}` : ''}</small></span>
           <span class="chevron-droit">${I.droite}</span></button></li>`;
       }).join('')}</ul>`
     : `<p class="vide">Note ton poids et tes mensurations quand tu veux : l'appli trace leur évolution et la croise avec tes programmes.</p>
@@ -722,7 +723,7 @@ function fenetreMesure(m) {
   const derniere = (pt) => { const s = S.serieCorps(pt.id).filter((x) => x.mesureId !== m.id); return s[s.length - 1]?.valeur; };
   ouvrirFenetre(`
     <form>
-      <h2>${nouvelle ? 'Nouvelle mesure' : `Mesure du ${dateCourte(m.date)}`}</h2>
+      <h2>${nouvelle ? 'Nouvelle mesure' : `Mesure du ${dateCourte(m.date, true)}`}</h2>
       <label class="champ"><span>Date</span><input type="date" name="date" value="${m.date}" max="${aujourdhui()}" required></label>
       <p class="aide">Remplis seulement ce que tu as mesuré. En gris : ta dernière valeur.</p>
       ${groupes.map((g) => `<p class="titre-choix">${esc(g)}</p>
@@ -790,11 +791,11 @@ function fenetrePointCorps(pt) {
   const evos = programmes.map((p) => ({ p, ev: S.evolutionPendant(p, pt.id) })).filter((x) => x.ev);
   ouvrirFenetre(`
     <h2>${esc(pt.nom)}</h2>
-    ${serie.length > 1 ? G.courbe({ points: serie.map((x) => ({ etiquette: dateCourte(x.date), y: x.valeur, tip: `${kg(x.valeur)} ${pt.unite}\n${dateCourte(x.date)}` })), format: (v) => kg(v) }) : '<p class="aide">Une deuxième mesure tracera la courbe.</p>'}
+    ${serie.length > 1 ? G.courbe({ points: serie.map((x) => ({ etiquette: dateNum(x.date), y: x.valeur, tip: `${kg(x.valeur)} ${pt.unite}\n${dateCourte(x.date, true)}` })), format: (v) => kg(v) }) : '<p class="aide">Une deuxième mesure tracera la courbe.</p>'}
     ${evos.length ? `<p class="titre-choix">Pendant les programmes</p><ul class="evolutions">${evos.map(({ p, ev }) => `<li><span>${esc(p.nom)}</span><span class="ev-val">${kg(ev.depart.valeur)} → ${kg(ev.arrivee.valeur)}</span><b>${signe(ev.ecart, pt.unite)}</b></li>`).join('')}</ul>` : ''}
     <table class="table-couloir">
       <thead><tr><th>Date</th><th>Valeur</th><th>Écart</th></tr></thead>
-      <tbody>${serie.slice().reverse().map((x, i, l) => `<tr><td>${dateCourte(x.date)}</td><td>${kg(x.valeur)} ${pt.unite}</td><td>${l[i + 1] ? signe(x.valeur - l[i + 1].valeur, pt.unite) : ''}</td></tr>`).join('')}</tbody>
+      <tbody>${serie.slice().reverse().map((x, i, l) => `<tr><td>${dateCourte(x.date, true)}</td><td>${kg(x.valeur)} ${pt.unite}</td><td>${l[i + 1] ? signe(x.valeur - l[i + 1].valeur, pt.unite) : ''}</td></tr>`).join('')}</tbody>
     </table>
     <button class="btn btn-large" data-f="ok">Fermer</button>`);
   couche.querySelector('[data-f="ok"]').onclick = fermer;
@@ -825,7 +826,12 @@ function vueProgrammes() {
       </div>
     </header>
     ${section('en-cours')}${section('preparation')}${section('termine')}
-    <button class="ajout" data-action="nouveau-programme">${I.plus} Nouveau programme</button>`;
+    <button class="ajout" data-action="nouveau-programme">${I.plus} Nouveau programme</button>
+    <h3 class="titre-section">Ma salle</h3>
+    <ul class="pool"><li><button class="split ligne-prog" data-action="regler-salle" style="--c:var(--b)">
+      <span class="split-texte"><strong>Lien Google Maps</strong><small>${S.get().reglages.salle ? esc(S.get().reglages.salle.replace(/^https?:\/\//, '')) : 'Pas encore renseigné : le bouton Salle de l\'accueil l\'ouvrira'}</small></span>
+      <span class="chevron-droit">${I.droite}</span>
+    </button></li></ul>`;
   window.scrollTo(0, 0);
 }
 
@@ -1288,16 +1294,42 @@ function ligneTemps(s, b, est) {
   return '';
 }
 
-function resumeBloc(b) {
-  let faites = 0, total = 0, ton = 0;
-  for (const e of actifs(b)) for (const x of e.series) {
-    total++;
-    if (x.fait) { faites++; if (enKg(e, active()?.date)) ton += volumeSerie(e, x, active()?.date); }
+/** Tonnage des séries cochées d'un bloc (null si aucun exercice du bloc ne se compte en kg). */
+function tonnageBloc(b, date) {
+  let t = 0, enKilos = false;
+  for (const e of actifs(b)) {
+    if (!enKg(e, date)) continue;
+    enKilos = true;
+    for (const x of e.series) if (x.fait) t += volumeSerie(e, x, date);
   }
-  return `${faites}/${total}${ton ? ` · ${kg(Math.round(ton))} kg` : ''}`;
+  return enKilos ? Math.round(t) : null;
 }
 
-function carteBloc(s, b, est) {
+/** Même bloc (même origine dans le modèle) à la séance précédente du split. */
+function blocPrecedent(prec, b) {
+  return prec && b.src ? prec.blocs.find((x) => x.src === b.src) || null : null;
+}
+
+/** « 820 kg · la dernière fois 1 580 kg » sous le titre du bloc. */
+function ligneTonnage(s, b, prec) {
+  const t = tonnageBloc(b, s.date);
+  if (t == null) return '';
+  const pb = blocPrecedent(prec, b);
+  const avant = pb ? tonnageBloc(pb, prec.date) : null;
+  if (!avant && !t) return '';
+  const fini = blocFini(b);
+  const ecart = fini && avant ? t - avant : null;
+  const classe = avant && t >= avant ? 'atteint' : '';
+  return `<small class="bloc-ton ${classe}"><b>${kg(t)} kg</b>${avant ? ` · la dernière fois ${kg(avant)} kg` : ''}${ecart ? ` <span class="ecart">(${ecart > 0 ? '+' : '−'}${kg(Math.abs(ecart))})</span>` : ''}</small>`;
+}
+
+function resumeBloc(b) {
+  let faites = 0, total = 0;
+  for (const e of actifs(b)) for (const x of e.series) { total++; if (x.fait) faites++; }
+  return `${faites}/${total}`;
+}
+
+function carteBloc(s, b, est, prec) {
   const tous = s.blocs.flatMap((x) => x.exos);
   const poignee = `<span class="poignee" data-glisser aria-label="Déplacer">${I.poignee}</span>`;
   if (!actifs(b).length) {
@@ -1320,7 +1352,7 @@ function carteBloc(s, b, est) {
   const tete = `
     <div class="bloc-tete">
       ${poignee}
-      <div class="bloc-titres">${titres}${ligneTemps(s, b, est)}</div>
+      <div class="bloc-titres">${titres}${ligneTonnage(s, b, prec)}${ligneTemps(s, b, est)}</div>
       <button class="bloc-plier" data-action="plier" data-bloc="${b.id}" aria-label="${b.replie ? 'Déplier' : 'Replier'}" aria-expanded="${!b.replie}">
         ${b.replie ? `<span class="bloc-resume ${fini ? 'fini' : ''}">${fini ? I.check : ''}${resumeBloc(b)}</span>` : (b.repos ? `<span class="bloc-repos">${I.chrono}${duree(b.repos)}</span>` : '')}
         <span class="chevron">${b.replie ? I.bas : I.haut}</span>
@@ -1361,12 +1393,12 @@ function vueSeance() {
       </div>
       ${s.debut ? `
         <div class="progression"><span style="width:${b.series ? (b.faites / b.series) * 100 : 0}%"></span></div>
-        <div class="bandeau-chiffres"><span><b>${b.faites}</b>/${b.series} séries</span><span><b>${kg(Math.round(b.tonnage))}</b> kg</span></div>`
+        <div class="bandeau-chiffres"><span><b>${b.faites}</b>/${b.series} séries</span><span><b>${kg(Math.round(b.tonnage))}</b> kg${(() => { const pr = S.precedente(s); return pr ? `<small class="ton-avant"> / ${kg(Math.round(bilan(pr).tonnage))} la dernière fois</small>` : ''; })()}</span></div>`
       : `<button class="btn-demarrer" data-action="lancer">${I.play} Démarrer la séance</button>`}
     </header>
     ${s.debut ? '' : '<p class="aide centre">Ajuste ce que tu veux avant : le temps ne part qu\'au démarrage.</p>'}
 
-    <div class="blocs" data-liste="blocs">${(() => { const est = estimations(s); return s.blocs.map((bl) => carteBloc(s, bl, est)).join(''); })()}</div>
+    <div class="blocs" data-liste="blocs">${(() => { const est = estimations(s); const prec = S.precedente(s); return s.blocs.map((bl) => carteBloc(s, bl, est, prec)).join(''); })()}</div>
 
     <button class="ajout" data-action="ajouter-exo">${I.plus} Ajouter un exercice</button>
     ${s.debut ? `<button class="btn btn-principal btn-large" data-action="terminer">${s.edition ? 'Enregistrer les modifications' : 'Terminer la séance'}</button>` : ''}
@@ -1508,6 +1540,30 @@ function ouvrirFenetre(html, onSubmit) {
   couche.onclick = (ev) => { if (ev.target === couche) fermer(); };
   const f = couche.querySelector('form');
   if (f && onSubmit) f.onsubmit = (ev) => { ev.preventDefault(); onSubmit(new FormData(f), f); };
+}
+
+/** Lien Google Maps de la salle : le bouton Salle de l'accueil l'ouvre directement. */
+function fenetreSalle(apres) {
+  const r = S.get().reglages;
+  ouvrirFenetre(`
+    <form>
+      <h2>Ma salle</h2>
+      <p class="aide">Dans Google Maps, ouvre ta salle → Partager → Copier le lien, puis colle-le ici. Le bouton Salle de l'accueil l'ouvrira directement, pratique pour voir la fréquentation.</p>
+      <label class="champ"><span>Lien Google Maps</span><input name="lien" inputmode="url" autocomplete="off" placeholder="https://maps.app.goo.gl/…" value="${esc(r.salle || '')}"></label>
+      <button class="btn btn-principal btn-large">Enregistrer</button>
+      ${r.salle ? '<div class="actions-sec"><button type="button" class="lien" data-f="tester">Ouvrir le lien</button> · <button type="button" class="lien danger" data-f="effacer">Effacer</button></div>' : ''}
+    </form>`, (fd) => {
+    const texte = String(fd.get('lien') || '').trim();
+    const url = (texte.match(/https?:\/\/\S+/) || [])[0];
+    if (texte && !url) return toast('Colle un lien qui commence par https://');
+    if (url) r.salle = url; else delete r.salle;
+    S.enregistrer(); fermer(); toast(url ? 'Lien de la salle enregistré' : 'Lien effacé');
+    (apres || route)();
+  });
+  const t = couche.querySelector('[data-f="tester"]');
+  if (t) t.onclick = () => window.open(r.salle, '_blank', 'noopener');
+  const e = couche.querySelector('[data-f="effacer"]');
+  if (e) e.onclick = () => { delete r.salle; S.enregistrer(); fermer(); toast('Lien effacé'); (apres || route)(); };
 }
 
 function fermer() {
@@ -1882,6 +1938,12 @@ app.addEventListener('click', (ev) => {
     }
     case 'dater': { const se = S.seance(d.id); return fenetreDate(se, () => vueRecap(se)); }
     case 'programmes': return aller('#/programmes');
+    case 'salle': {
+      const url = S.get().reglages.salle;
+      if (url) return window.open(url, '_blank', 'noopener');
+      return fenetreSalle();
+    }
+    case 'regler-salle': return fenetreSalle();
     case 'ouvrir-programme': return aller(`#/p/${d.id}`);
     case 'configurer': retourConfig = 'programme'; return aller(`#/programme/${d.id}`);
     case 'stats': return aller(`#/stats/${d.id}`);
