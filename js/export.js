@@ -12,7 +12,7 @@ export function nomCycle(p) {
 
 export const nomStructure = (p) => `${AAAAMMJJ()} - Sport ${nomCycle(p)} - Structure.txt`;
 export const nomDonnees = (p) => `${AAAAMMJJ()} - Sport ${nomCycle(p)} - Données.txt`;
-export const nomComplet = () => `${AAAAMMJJ()} - Sport - Export complet.txt`;
+export const nomComplet = () => `${AAAAMMJJ()} - Export Sport.txt`;
 
 function seriesModele(e) {
   const t = e.series.map((x) => texteSerie(e, x));
