@@ -47,6 +47,30 @@ export function precedente(s) {
   return l[l.length - 1] || null;
 }
 
+/**
+ * Séance hors timing : sa durée et celles de ses exercices n'entrent ni dans les moyennes
+ * ni dans les estimations. Charges et tonnage comptent toujours.
+ * Par défaut : hors timing si saisie après coup, sinon comptée.
+ */
+export const horsTiming = (s) => s.horsTiming ?? !!s.passee;
+
+export function definirTiming(s, compte) {
+  s.horsTiming = !compte;
+  enregistrer();
+}
+
+/** Saisie sans minutage (séance du jour ou d'un autre jour) : pas de chrono, hors timing. */
+export function saisieSansMinutage(s, date) {
+  s.date = date;
+  s.passee = true;
+  s.horsTiming = true;
+  s.debut = iso(date);
+  s.fin = null;
+  const p = programme(s.programmeId);
+  if (p && (!p.debut || date < p.debut)) p.debut = date;
+  enregistrer();
+}
+
 // Ouvre une séance sans lancer le temps : on peut l'ajuster avant de commencer.
 export function ouvrir(programmeId, splitId) {
   const p = programme(programmeId);
@@ -172,7 +196,7 @@ export function bilanProgramme(p, jusqua = p.fin || aujourdhui()) {
     seances: l.length, jours, tonnage, activites: activitesDe(p).length,
     parSemaine: jours ? ((l.length + activitesDe(p).length) / jours) * 7 : 0,
     moyenne: l.length ? tonnage / l.length : 0,
-    dureeMoyenne: l.length ? bilans.reduce((a, b) => a + b.dureeSec, 0) / l.length : 0,
+    dureeMoyenne: (() => { const t = l.map((x, i) => (horsTiming(x) ? null : bilans[i].dureeSec)).filter((x) => x != null); return t.length ? t.reduce((a, b) => a + b, 0) / t.length : 0; })(),
     reposMoyen: repos.length ? repos.reduce((a, b) => a + b.reposMoyen, 0) / repos.length : 0,
     reposPrevu: repos.length ? repos.reduce((a, b) => a + b.reposPrevuMoyen, 0) / repos.length : 0,
     ressenti: ressentis.length ? ressentis.reduce((a, b) => a + b, 0) / ressentis.length : null,
@@ -392,7 +416,7 @@ export function propagerPct(exoModeleId, pct) {
 export function dureesMoyennes(programmeId, splitId) {
   const sommes = new Map();
   for (const s of seancesDe(programmeId)) {
-    if (s.splitId !== splitId) continue;
+    if (s.splitId !== splitId || horsTiming(s)) continue;
     for (const b of s.blocs) {
       if (!b.src || !b.duree) continue;
       const m = sommes.get(b.src) || { t: 0, n: 0 };

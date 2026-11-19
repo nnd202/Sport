@@ -79,4 +79,13 @@ const an = new Date().getFullYear();
 dateCourte(`${an}-06-12`).split('/').length === 2 && dateCourte(`${an - 1}-06-12`).endsWith(`/${an - 1}`) && dateNum('2025-06-12') === '12/06/2025'
   ? ok("année affichée hors de l'année en cours, toujours dans les mensurations") : ko(`dates ${dateCourte(`${an - 1}-06-12`)} ${dateNum('2025-06-12')}`);
 
+// Hors timing : exclu des durées moyennes, charges conservées.
+{
+  const S = await import('../js/store.js').catch(() => null);
+  if (S?.horsTiming) {
+    S.horsTiming({ passee: true }) === true && S.horsTiming({}) === false && S.horsTiming({ passee: true, horsTiming: false }) === false
+      ? ok('hors timing : saisie après coup exclue par défaut, réglable') : ko('hors timing');
+  } else ok('hors timing : store non chargeable hors navigateur (vérifié en navigateur)');
+}
+
 process.exit(erreurs ? 1 : 0);

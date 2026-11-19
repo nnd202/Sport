@@ -115,7 +115,7 @@ function ligneChronologie({ type, item }) {
   if (type === 'seance') {
     const b = bilan(item);
     return `<li><button class="ligne-histo" data-action="recap" data-id="${item.id}" style="--c:${item.couleur}">
-      <span class="histo-texte"><strong>${esc(item.nom)}</strong><small>${dateCourte(item.date)} · ${dureeSeance(b.dureeSec)}${item.ressenti ? ` · ressenti ${item.ressenti}/10` : ''}</small></span>
+      <span class="histo-texte"><strong>${esc(item.nom)}</strong><small>${dateCourte(item.date)}${b.dureeSec >= 60 ? ` · ${dureeSeance(b.dureeSec)}` : ''}${item.ressenti ? ` · ressenti ${item.ressenti}/10` : ''}</small></span>
       <span class="histo-tonnage">${kg(Math.round(b.tonnage))} kg</span>
     </button></li>`;
   }
@@ -1288,6 +1288,9 @@ function estimations(s) {
 }
 
 function ligneTemps(s, b, est) {
+  if ((s.edition || s.passee) && actifs(b).length && !b.exos.every((e) => e.mesure === 'echauffement')) {
+    return `<button class="bloc-temps modifiable ${b.duree != null ? 'fini' : ''}" data-action="duree-bloc" data-bloc="${b.id}">${I.chrono}${b.duree != null ? `${b.finA ? `fini à ${heureCourte(b.finA)} · ` : ''}${minutes(b.duree)}` : 'durée ?'} <span class="crayon">${I.crayon}</span></button>`;
+  }
   if (b.finA && b.duree != null) return `<small class="bloc-temps fini">${I.check}fini à ${heureCourte(b.finA)} · ${minutes(b.duree)}</small>`;
   const e = est?.get(b.id);
   if (e?.moyenne) return `<small class="bloc-temps">≈ ${minutes(e.moyenne)} · fin vers ${heureCourte(e.fin)}</small>`;
@@ -1426,12 +1429,13 @@ function vueRecap(s) {
       </div>
     </header>
     <div class="tuiles">
-      <div class="tuile"><small>Durée</small><strong>${dureeSeance(b.dureeSec)}</strong></div>
+      <div class="tuile"><small>Durée</small><strong>${b.dureeSec >= 60 ? dureeSeance(b.dureeSec) : '–'}${S.horsTiming(s) ? ' <em>hors timing</em>' : ''}</strong></div>
       <div class="tuile"><small>Tonnage</small><strong>${kg(Math.round(b.tonnage))} kg${b.tonnageCorps ? ` <em>dont ${kg(Math.round(b.tonnageCorps))} au poids du corps</em>` : ''}</strong></div>
       <div class="tuile"><small>Séries</small><strong>${b.faites}/${b.series}</strong></div>
       <div class="tuile"><small>Ressenti</small><strong>${s.ressenti ? `${s.ressenti}/10` : '–'}</strong></div>
     </div>
     ${s.note ? `<p class="note-seance">${esc(s.note)}</p>` : ''}
+    ${interrupteurTiming(s)}
     <div class="recap">
       ${s.blocs.map((bl) => bl.exos.map((e) => {
         if (e.remplacePar) return `<div class="recap-exo remplace"><s>${esc(e.nom)}</s> → ${esc(tous.find((x) => x.id === e.remplacePar)?.nom || '')}</div>`;
@@ -1445,7 +1449,9 @@ function vueRecap(s) {
       }).join('')).join('')}
     </div>
     <button class="btn btn-large ${s.edition ? 'btn-principal' : ''}" data-action="modifier-seance" data-id="${s.id}">${I.crayon} ${s.edition ? 'Reprendre la modification en cours' : 'Modifier cette séance'}</button>
+    <p class="aide centre">Pour corriger la durée d'un exercice : Modifier cette séance, puis touche sa durée sous son nom.</p>
     <div class="pied"><button class="lien danger" data-action="supprimer-seance" data-id="${s.id}">Supprimer cette séance</button></div>`;
+  brancherTiming(s, () => vueRecap(s));
   window.scrollTo(0, 0);
 }
 
@@ -1657,9 +1663,10 @@ function fenetreSerie(s, blocId, exoId, i) {
     Object.assign(v, lireMesure(fd, e.mesure), { fait: true });
     if (accepteDegressif(e)) v.paliers = lirePaliers(couche.querySelector('.degressives [data-paliers]'), e.mesure);
     s.dernierBloc = blocId;
-    if (!s.debut) S.lancer(s);
-    majFinBloc(s, s.blocs.find((x) => x.id === blocId));
-    S.enregistrer(); fermer(); vueSeance();
+    const fin = () => { majFinBloc(s, s.blocs.find((x) => x.id === blocId)); S.enregistrer(); vueSeance(); };
+    fermer();
+    if (!s.debut) return fenetreDemarrage(s, fin);
+    fin();
   });
   const deg = couche.querySelector('.degressives');
   if (deg) deg.addEventListener('click', (ev) => {
@@ -1785,7 +1792,6 @@ function fenetreAjout(s) {
     }
     s.blocs.push(bloc);
     s.dernierBloc = bloc.id;
-    if (!s.debut) S.lancer(s);
     S.enregistrer(); fermer(); vueSeance();
     toast(exo.remplace ? 'Ajouté en remplacement' : 'Ajouté en plus');
   });
@@ -1832,6 +1838,56 @@ function confirmerDeux(btn) {
   return false;
 }
 
+const AIDE_TIMING = "Désactivé : la durée de la séance et celle de ses exercices n'entrent ni dans les moyennes ni dans les estimations de fin. Les charges et le tonnage comptent toujours.";
+
+function interrupteurTiming(s) {
+  return `<div class="bloc-timing">
+    <label class="interrupteur bas"><input type="checkbox" data-f="timing" ${S.horsTiming(s) ? '' : 'checked'}><span></span>Compter dans le timing</label>
+    <p class="aide">${AIDE_TIMING}</p></div>`;
+}
+
+function brancherTiming(s, apres) {
+  const c = (couche.hidden ? app : couche).querySelector('[data-f="timing"]');
+  if (c) c.onchange = () => { S.definirTiming(s, c.checked); toast(c.checked ? 'Comptée dans le timing' : 'Hors timing : charges toujours comptées'); if (apres) apres(); };
+}
+
+/** Durée d'un exercice corrigée à la main (modification ou saisie après coup). */
+function fenetreDureeBloc(s, b) {
+  const noms = actifs(b).map((e) => esc(e.nom)).join(' + ');
+  ouvrirFenetre(`
+    <form>
+      <h2>Durée</h2>
+      <p class="aide">${noms}</p>
+      <label class="champ"><span>Durée en minutes</span><input name="min" inputmode="numeric" value="${b.duree != null ? Math.round(b.duree / 60) : ''}" placeholder="9"></label>
+      <button class="btn btn-principal btn-large">Enregistrer</button>
+      ${b.duree != null ? '<div class="actions-sec"><button type="button" class="lien danger" data-f="effacer">Effacer la durée</button></div>' : ''}
+    </form>`, (fd) => {
+    const m = num(fd.get('min'));
+    if (m > 0) b.duree = Math.round(m * 60); else { delete b.duree; delete b.finA; }
+    S.enregistrer(); fermer(); vueSeance();
+    if (m > 0 && S.horsTiming(s)) toast('Séance hors timing : active « Compter dans le timing » (menu ⋯) pour que ces durées comptent');
+  });
+  const e = couche.querySelector('[data-f="effacer"]');
+  if (e) e.onclick = () => { delete b.duree; delete b.finA; S.enregistrer(); fermer(); vueSeance(); };
+}
+
+/** Première série cochée d'une séance pas démarrée : démarrer le temps, ou saisir sans minutage. */
+function fenetreDemarrage(s, suite) {
+  ouvrirFenetre(`
+    <form>
+      <h2>Démarrer la séance ?</h2>
+      <p class="aide">« Démarrer » lance le temps et le minutage des exercices. Pour ressaisir une séance déjà faite, choisis « Sans minutage » : seules les séries et les charges comptent.</p>
+      <button type="button" class="btn btn-principal btn-large" data-f="demarrer">${I.play} Démarrer maintenant</button>
+      <p class="titre-choix">Sans minutage</p>
+      <label class="champ"><span>Date de la séance</span><input type="date" name="date" value="${aujourdhui()}" max="${aujourdhui()}" required></label>
+      <button class="btn btn-large">Saisir sans minutage</button>
+    </form>`, (fd) => {
+    S.saisieSansMinutage(s, fd.get('date') || aujourdhui());
+    fermer(); suite(); toast('Saisie sans minutage');
+  });
+  couche.querySelector('[data-f="demarrer"]').onclick = () => { S.lancer(s); fermer(); suite(); };
+}
+
 function fenetreMenuSeance(s) {
   ouvrirFenetre(`
     <h2>${esc(s.nom)}</h2>
@@ -1841,9 +1897,11 @@ function fenetreMenuSeance(s) {
       <button class="btn" data-f="replier">Tout replier</button>
       <button class="btn" data-f="deplier">Tout déplier</button>
     </div>
+    ${interrupteurTiming(s)}
     <p class="aide">Pour changer l'ordre des blocs, attrape la poignée ⠿ à gauche d'un bloc.</p>
     <div class="actions-sec"><button class="lien danger" data-f="abandon">${s.edition ? 'Annuler les modifications' : s.debut ? 'Abandonner la séance' : 'Fermer sans démarrer'}</button></div>`);
   const tous = (v) => () => { s.blocs.forEach((b) => { b.replie = v; }); S.enregistrer(); fermer(); vueSeance(); };
+  brancherTiming(s, vueSeance);
   couche.querySelector('[data-f="date"]').onclick = () => fenetreDate(s, vueSeance);
   const mo = couche.querySelector('[data-f="modele"]');
   if (mo) mo.onclick = () => { retourConfig = 'programme'; fermer(); aller(`#/split/${s.programmeId}/${s.splitId}`); toast('Le modèle vaut pour les prochaines séances'); };
@@ -2046,6 +2104,7 @@ app.addEventListener('click', (ev) => {
       const { e } = trouver(s, d.bloc, d.exo);
       const v = e.series[+d.i];
       if (!v.fait && serieIncomplete(e, v)) return fenetreSerie(s, d.bloc, d.exo, +d.i);
+      if (!v.fait && !s.debut) return fenetreDemarrage(s, () => { v.fait = true; v.faitA = Date.now(); s.dernierBloc = d.bloc; majFinBloc(s, s.blocs.find((x) => x.id === d.bloc)); S.enregistrer(); vueSeance(); });
       v.fait = !v.fait;
       if (v.fait) { v.faitA = Date.now(); s.dernierBloc = d.bloc; if (!s.debut) S.lancer(s); } else delete v.faitA;
       majFinBloc(s, s.blocs.find((x) => x.id === d.bloc));
@@ -2053,6 +2112,7 @@ app.addEventListener('click', (ev) => {
       return vueSeance();
     }
     case 'editer-serie': return fenetreSerie(s, d.bloc, d.exo, +d.i);
+    case 'duree-bloc': return fenetreDureeBloc(s, s.blocs.find((x) => x.id === d.bloc));
     case 'editer-exo': return fenetreExo(s, d.bloc, d.exo);
     case 'ajouter-serie': {
       const b = s.blocs.find((x) => x.id === d.bloc);
