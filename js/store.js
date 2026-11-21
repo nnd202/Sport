@@ -109,6 +109,8 @@ export function terminer(s, { ressenti, note }) {
   }
   if (!s.debut) lancer(s);
   // Séance saisie à une autre date : on garde les heures saisies.
+  const pause = s.pauses?.[s.pauses.length - 1];
+  if (pause && pause.a == null) pause.a = Date.now();
   if (!s.passee) s.fin = new Date().toISOString();
   else if (!s.fin) s.fin = s.debut;
   s.ressenti = ressenti;

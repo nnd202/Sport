@@ -484,3 +484,27 @@ svg.graphe text { stroke: none; }
 button.bloc-temps.modifiable { background: var(--pale-2); border: 1px dashed color-mix(in srgb, var(--b) 35%, white); border-radius: 8px; padding: 2px 7px; margin-top: 4px; font: inherit; font-size: 12px; color: var(--texte-2); }
 button.bloc-temps.modifiable.fini { color: var(--accent); }
 button.bloc-temps .crayon svg { width: 11px; height: 11px; }
+
+/* Séries passées */
+.serie.sautee .serie-valeur { opacity: .45; text-decoration: line-through; }
+.serie.sautee .serie-num { opacity: .45; }
+.coche.passee { color: var(--texte-3); border-style: dashed; background: none; }
+.coche.passee svg { width: 18px; height: 18px; }
+.bloc-pied:has(> :nth-child(3)) { grid-template-columns: 1fr 1fr 1fr; }
+
+/* Estimation dépassée */
+.bloc-temps.retard { color: #c0803b; }
+
+/* Pause de séance */
+.btn-demarrer.pause { display: flex; flex-direction: column; align-items: center; gap: 2px; margin-bottom: 10px; }
+.btn-demarrer.pause small { font-size: 12px; font-weight: 500; opacity: .85; }
+
+/* Poids du corps assisté : le lest devient une assistance */
+.signe-lest::before { content: "+"; }
+.assiste .signe-lest::before { content: "−"; }
+.lib-lest::before { content: "Lest"; }
+.assiste .lib-lest::before { content: "Assistance (aide)"; }
+.bloc-pied button + button { border-left: 1px solid var(--trait); }
+.bloc-pied button:nth-child(2) { color: var(--accent); }
+.bloc-pied button:nth-child(3) { color: var(--texte-2, #5a6270); }
+.btn-demarrer.pause .l1 { display: inline-flex; align-items: center; gap: 8px; }

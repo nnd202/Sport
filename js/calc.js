@@ -46,11 +46,14 @@ export const dateNum = (iso) => dateCourte(iso, true).split(' ')[1];
 
 export const kg = (n) => (Math.round(n * 100) / 100).toLocaleString('fr-FR');
 
+/** Poids du corps assisté (machine à contrepoids, élastique d'assistance) : le « lest » aide, il se retranche. */
+export const signeLest = (exo) => (exo.assiste ? '−' : '+');
+
 /** Texte des paliers dégressifs : « ↘ 27,5 × 6 ↘ 12,5 × 8 ». */
 export function textePaliers(exo, s) {
   if (!s.paliers?.length) return '';
   return s.paliers.map((p) => (exo.mesure === 'pdc'
-    ? ` ↘ ${p.reps ?? '–'} reps${p.lest ? ` +${kg(p.lest)} kg` : ''}`
+    ? ` ↘ ${p.reps ?? '–'} reps${p.lest ? ` ${signeLest(exo)}${kg(p.lest)} kg` : ''}`
     : ` ↘ ${p.kg == null ? '–' : kg(p.kg)} × ${p.reps ?? '–'}`)).join('');
 }
 
@@ -66,8 +69,18 @@ function texteSerieSimple(exo, s) {
   if (exo.mesure === 'temps') return `${s.sec ?? '–'} s`;
   if (exo.mesure === 'cardio') return `${s.min == null ? '–' : kg(s.min)} min`;
   if (exo.mesure === 'echauffement') return 'fait';
-  if (exo.mesure === 'pdc') return `${s.reps ?? '–'} reps${s.lest ? ` +${kg(s.lest)} kg` : ''}`;
+  if (exo.mesure === 'pdc') return `${s.reps ?? '–'} reps${s.lest ? ` ${signeLest(exo)}${kg(s.lest)} kg` : ''}`;
   return `${s.kg == null ? '–' : kg(s.kg)} kg × ${s.reps ?? '–'}`;
+}
+
+/** Pauses de séance : [{ de, a }] en ms, la dernière ouverte (a null) pendant une pause. */
+export const enPause = (s) => !!s.pauses?.length && s.pauses[s.pauses.length - 1].a == null;
+
+/** Temps de pause (ms) compris entre deux instants. */
+export function pauseEntre(s, de, a) {
+  let t = 0;
+  for (const p of s.pauses || []) t += Math.max(0, Math.min(p.a ?? Date.now(), a) - Math.max(p.de, de));
+  return t;
 }
 
 // Poids du corps à une date (dernière pesée au plus tard ce jour-là), fourni par le stockage.
@@ -83,7 +96,8 @@ export function chargeRep(exo, s, date) {
   if (exo.mesure !== 'pdc' || !exo.pct) return null;
   const poids = poidsAu(date);
   if (!poids) return null;
-  return (poids * exo.pct) / 100 + (s.lest || 0);
+  const base = (poids * exo.pct) / 100;
+  return exo.assiste ? Math.max(0, base - (s.lest || 0)) : base + (s.lest || 0);
 }
 
 /** Volume d'une série faite : tonnage si la charge est connue, sinon reps (pdc) ou secondes (temps). */
@@ -107,6 +121,7 @@ export const enKg = (exo, date) => exo.mesure === 'charge' || (exo.mesure === 'p
 export function bilan(seance) {
   let tonnage = 0, tonnageCorps = 0, series = 0, faites = 0;
   for (const b of seance.blocs) for (const e of b.exos) if (!e.remplacePar) for (const s of e.series) {
+    if (s.saute) continue; // série passée : ni faite ni due
     series++;
     if (s.fait) faites++;
     if (s.fait && enKg(e, seance.date)) {
@@ -122,7 +137,7 @@ export function bilan(seance) {
   const debut = seance.debut ? new Date(seance.debut) : fin;
   return {
     tonnage, tonnageCorps, series, faites,
-    dureeSec: (fin - debut) / 1000,
+    dureeSec: Math.max(0, (fin - debut - pauseEntre(seance, +debut, +fin)) / 1000),
     reposMoyen: repos.length ? reel / repos.length : 0,
     reposPrevuMoyen: repos.length ? prevu / repos.length : 0,
     nbRepos: repos.length,
@@ -181,6 +196,7 @@ export function nouvelleSeance(programme, split, derniere) {
           mesure: e.mesure,
           uni: !!e.uni,
           pct: e.pct ?? null,
+          assiste: !!e.assiste,
           note: e.note || '',
           series: e.series.map((p, i) => {
             const v = avant?.series[i] ?? avant?.series[avant.series.length - 1];

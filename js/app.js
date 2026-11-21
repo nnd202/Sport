@@ -1,6 +1,6 @@
 // Interface de Sport : accueil, séance, récap, chrono, fenêtres de saisie.
 import * as S from './store.js';
-import { uid, duree, dureeSeance, dateCourte, dateNum, kg, texteSerie, bilan, MESURES, aujourdhui, enKg, volumeSerie, accepteDegressif } from './calc.js';
+import { uid, duree, dureeSeance, dateCourte, dateNum, kg, texteSerie, bilan, MESURES, aujourdhui, enKg, volumeSerie, accepteDegressif, enPause, pauseEntre, signeLest } from './calc.js';
 import { COULEURS_SPLITS } from './demo.js';
 import * as X from './export.js';
 import * as ST from './stats.js';
@@ -21,6 +21,8 @@ const I = {
   moins: '<svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg>',
   check: '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
   croix: '<svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></svg>',
+  pause: '<svg viewBox="0 0 24 24"><path d="M9 6v12M15 6v12"/></svg>',
+  passer: '<svg viewBox="0 0 24 24"><path d="M5 16c1-5 5-8 10-7l3 .5"/><path d="M15 6l3 3.5-3.5 3"/><path d="M5 19h6"/></svg>',
   play: '<svg viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z" class="plein"/></svg>',
   pause: '<svg viewBox="0 0 24 24"><rect x="6.5" y="5.5" width="4" height="13" rx="1.2" class="plein"/><rect x="13.5" y="5.5" width="4" height="13" rx="1.2" class="plein"/></svg>',
   reset: '<svg viewBox="0 0 24 24"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.5v4h4"/></svg>',
@@ -217,7 +219,7 @@ function vuePrincipale(p) {
       <h3 class="titre-section">Séance en cours</h3>
       <button class="split encours" data-action="reprendre" style="--c:${enCours.couleur}">
         <span class="split-texte"><strong>${esc(enCours.nom)}</strong><small>${enCours.debut ? `${bilan(enCours).faites}/${bilan(enCours).series} séries · ${kg(Math.round(bilan(enCours).tonnage))} kg` : 'Ouverte, pas commencée'}</small></span>
-        <span class="encours-temps" ${enCours.passee ? '' : 'data-temps-seance'}>${enCours.passee ? dateCourte(enCours.date) : enCours.debut ? duree((Date.now() - new Date(enCours.debut)) / 1000) : 'Reprendre'}</span>
+        <span class="encours-temps" ${enCours.passee ? '' : 'data-temps-seance'}>${enCours.passee ? dateCourte(enCours.date) : enCours.debut ? duree(bilan(enCours).dureeSec) : 'Reprendre'}</span>
       </button>` : ''}
 
     ${p.statut !== 'termine' ? `
@@ -959,7 +961,7 @@ function texteModele(e) {
   if (!e.series.length) return 'aucune série';
   const t = e.series.map((x) => texteSerie(e, x));
   const pareil = t.every((x) => x === t[0]);
-  return (pareil ? `${e.series.length} × ${t[0]}` : t.join(' · ')) + (e.mesure === 'pdc' && e.pct ? ` · ${kg(e.pct)} % du poids` : '');
+  return (pareil ? `${e.series.length} × ${t[0]}` : t.join(' · ')) + (e.mesure === 'pdc' && e.pct ? ` · ${kg(e.pct)} % du poids` : '') + (e.mesure === 'pdc' && e.assiste ? ' · assisté' : '');
 }
 
 function vueSplit(p, sp) {
@@ -1029,7 +1031,9 @@ function champPct(e) {
   const poids = S.poidsAu(aujourdhui());
   return `<label class="ligne-mesure"><span>Part du poids du corps soulevée<small class="aide-pct">${poids ? `ta dernière pesée : ${kg(poids)} kg` : 'aucune pesée : ajoute ton poids dans Mensurations'}</small></span>
     <span class="mini-champ"><input name="pct" inputmode="decimal" value="${e.pct ?? pctSuggere(e.nom) ?? ''}" placeholder="—"><span>%</span></span></label>
-    <p class="aide">Ex. pompes ≈ 70 %, dips ≈ 92 %, tractions ≈ 95 %. Vide = compté en répétitions. Le lest (+ kg) se règle par série.</p>`;
+    <p class="aide">Ex. pompes ≈ 70 %, dips ≈ 92 %, tractions ≈ 95 %. Vide = compté en répétitions. Le lest (+ kg) se règle par série.</p>
+    <label class="interrupteur"><input type="checkbox" name="assiste" ${e.assiste ? 'checked' : ''}><span></span>Avec assistance</label>
+    <p class="aide">Machine à contrepoids, élastique d'aide : la charge réglée se retranche (poids × % − assistance). Plus d'assistance = plus facile, une dégressive monte l'assistance.</p>`;
 }
 
 // --- Dégressives : paliers d'une série (charge, ou lest pour le poids du corps) ---------
@@ -1039,7 +1043,7 @@ function lignePalier(mesure, p = {}) {
     <span class="fleche">↘</span>
     ${mesure === 'pdc'
       ? `<label class="mini-champ"><input name="p-reps" inputmode="numeric" value="${valChamp(p.reps)}" placeholder="–"><span>reps</span></label>
-         <label class="mini-champ lest"><span>+</span><input name="p-lest" inputmode="decimal" value="${p.lest ? valChamp(p.lest) : ''}" placeholder="0"><span>kg</span></label>`
+         <label class="mini-champ lest"><span class="signe-lest"></span><input name="p-lest" inputmode="decimal" value="${p.lest ? valChamp(p.lest) : ''}" placeholder="0"><span>kg</span></label>`
       : `<label class="mini-champ"><input name="p-kg" inputmode="decimal" value="${valChamp(p.kg)}" placeholder="–"><span>kg</span></label>
          <label class="mini-champ"><input name="p-reps" inputmode="numeric" value="${valChamp(p.reps)}" placeholder="–"><span>reps</span></label>`}
     <button type="button" class="btn-icone petit" data-f="retirer-palier" aria-label="Retirer cette dégressive">${I.croix}</button>
@@ -1076,7 +1080,7 @@ function lignesSeries(mesure, series) {
       ${mesure === 'cardio' ? `<label class="mini-champ"><input name="min" inputmode="decimal" value="${valChamp(x.min)}" placeholder="–"><span>min</span></label>`
         : mesure === 'temps' ? `<label class="mini-champ"><input name="sec" inputmode="numeric" value="${valChamp(x.sec)}" placeholder="–"><span>s</span></label>`
         : `<label class="mini-champ"><input name="reps" inputmode="numeric" value="${valChamp(x.reps)}" placeholder="–"><span>reps</span></label>`}
-      ${mesure === 'pdc' ? `<label class="mini-champ lest"><span>+</span><input name="lest" inputmode="decimal" value="${x.lest ? String(x.lest).replace('.', ',') : ''}" placeholder="0"><span>kg</span></label>` : ''}
+      ${mesure === 'pdc' ? `<label class="mini-champ lest"><span class="signe-lest"></span><input name="lest" inputmode="decimal" value="${x.lest ? String(x.lest).replace('.', ',') : ''}" placeholder="0"><span>kg</span></label>` : ''}
       ${deg ? '<button type="button" class="btn-icone petit degr" data-f="ajouter-palier" aria-label="Ajouter une dégressive">↘</button>' : ''}
       <button type="button" class="btn-icone petit" data-f="retirer-ligne" aria-label="Retirer la série">${I.croix}</button>
     </div>
@@ -1121,7 +1125,7 @@ function fenetreModeleExo(p, sp, bloc, exo) {
     const mesure = fd.get('mesure');
     const pctTxt = String(fd.get('pct') || '').trim();
     const pct = mesure === 'pdc' && pctTxt ? Math.min(200, Math.max(1, num(pctTxt))) : null;
-    const donnees = { nom: majuscule(fd.get('nom')), mesure, uni: fd.get('uni') === 'on', note: fd.get('note').trim(), series: lireLignes(form, mesure), pct };
+    const donnees = { nom: majuscule(fd.get('nom')), mesure, uni: fd.get('uni') === 'on', note: fd.get('note').trim(), series: lireLignes(form, mesure), pct, assiste: mesure === 'pdc' && fd.get('assiste') === 'on' };
     if (!nouveau && pct !== (exo.pct ?? null) && mesure === 'pdc') {
       const n = S.propagerPct(exo.id, pct);
       if (n) setTimeout(() => toast(`Pourcentage appliqué aussi à ${n} séance${n > 1 ? 's' : ''} déjà faite${n > 1 ? 's' : ''}`), 50);
@@ -1198,7 +1202,8 @@ function fenetreModeleRepos(p, sp, bloc) {
 
 const actifs = (b) => b.exos.filter((e) => !e.remplacePar);
 function nbTours(b) { return Math.max(0, ...actifs(b).map((e) => e.series.length)); }
-function blocFini(b) { return actifs(b).every((e) => e.series.length && e.series.every((x) => x.fait)); }
+function blocFini(b) { return actifs(b).every((e) => e.series.length && e.series.every((x) => x.fait || x.saute)); }
+const blocEntame = (b) => actifs(b).some((e) => e.series.some((x) => x.fait || x.saute));
 
 const vide = (v) => v == null || v === '';
 const nb = (v, f = (x) => x) => (vide(v) ? '–' : f(v));
@@ -1217,7 +1222,7 @@ function valeurs(e, s) {
   if (e.mesure === 'temps') return `<span class="v"><b>${nb(s.sec)}</b> s${u}</span>`;
   if (e.mesure === 'cardio') return `<span class="v"><b>${nb(s.min, kg)}</b> min</span>`;
   if (e.mesure === 'echauffement') return `<span class="v">${s.fait ? 'Fait' : 'À faire'}</span>`;
-  if (e.mesure === 'pdc') return `<span class="v"><b>${nb(s.reps)}</b> reps${u}</span>${s.lest ? `<span class="v"><b>+${kg(s.lest)}</b> kg</span>` : ''}`;
+  if (e.mesure === 'pdc') return `<span class="v"><b>${nb(s.reps)}</b> reps${u}</span>${s.lest ? `<span class="v"><b>${signeLest(e)}${kg(s.lest)}</b> kg</span>` : ''}`;
   return `<span class="v v-kg"><b>${nb(s.kg, kg)}</b> kg</span><span class="v"><b>${nb(s.reps)}</b> reps${u}</span>`;
 }
 
@@ -1226,16 +1231,18 @@ function ligneSerie(b, e, si, numero) {
   if (!s) return '';
   const change = s.prevu && !serieIncomplete(e, s.prevu) && texteSerie(e, s) !== texteSerie(e, s.prevu);
   return `
-    <div class="serie ${s.fait ? 'faite' : ''}">
+    <div class="serie ${s.fait ? 'faite' : ''} ${s.saute ? 'sautee' : ''}">
       <span class="serie-num">${numero}</span>
       <button class="serie-valeur" data-action="editer-serie" data-bloc="${b.id}" data-exo="${e.id}" data-i="${si}">
         ${valeurs(e, s)}${change ? '<span class="modifie" title="Différent du prévu"></span>' : ''}
       </button>
-      <button class="coche" data-action="cocher" data-bloc="${b.id}" data-exo="${e.id}" data-i="${si}" aria-label="Valider la série">${I.check}</button>
+      ${s.saute
+        ? `<button class="coche passee" data-action="reprendre-serie" data-bloc="${b.id}" data-exo="${e.id}" data-i="${si}" aria-label="Série passée : la reprendre">${I.passer}</button>`
+        : `<button class="coche" data-action="cocher" data-bloc="${b.id}" data-exo="${e.id}" data-i="${si}" aria-label="Valider la série">${I.check}</button>`}
     </div>
     ${accepteDegressif(e) && s.paliers?.length ? `<button class="paliers-serie ${s.fait ? 'faite' : ''}" data-action="editer-serie" data-bloc="${b.id}" data-exo="${e.id}" data-i="${si}">
       ${s.paliers.map((p) => `<span class="palier">↘ ${e.mesure === 'pdc'
-        ? `<b>${nb(p.reps)}</b> reps${p.lest ? ` +${kg(p.lest)} kg` : ''}`
+        ? `<b>${nb(p.reps)}</b> reps${p.lest ? ` ${signeLest(e)}${kg(p.lest)} kg` : ''}`
         : `<b>${nb(p.kg, kg)}</b> kg × <b>${nb(p.reps)}</b>`}</span>`).join('')}
     </button>` : ''}`;
 }
@@ -1248,6 +1255,7 @@ function etiquettes(e, s) {
     t.push(`Remplace ${r ? r.nom : ''}`);
   }
   if (e.ponctuel) t.push('En plus');
+  if (e.mesure === 'pdc' && e.assiste) t.push('Assisté : la charge aide');
   return t.map((x) => `<span class="etiquette">${esc(x)}</span>`).join('');
 }
 
@@ -1264,26 +1272,36 @@ function majFinBloc(s, b) {
   b.finA = Date.now();
   const avant = s.blocs.filter((x) => x !== b && x.finA && x.finA <= b.finA).map((x) => x.finA);
   const repere = avant.length ? Math.max(...avant) : new Date(s.debut).getTime();
-  b.duree = Math.max(0, Math.round((b.finA - repere) / 1000));
+  b.duree = Math.max(0, Math.round((b.finA - repere - pauseEntre(s, repere, b.finA)) / 1000));
 }
 
 const heureCourte = (ms) => new Date(ms).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 const minutes = (sec) => `${Math.max(1, Math.round(sec / 60))} min`;
 
-/** Estimation enchaînée pour les blocs restants, dans l'ordre affiché. */
+/**
+ * Estimation enchaînée des blocs restants.
+ * Point de départ : la fin du dernier exercice terminé (sinon le début de la séance), plus les pauses depuis.
+ * Cocher une série ne bouge rien ; seuls la fin d'un exercice, l'ordre et les pauses comptent.
+ * L'exercice en cours (déjà entamé, sinon le premier restant) passe en tête ; s'il dépasse son heure
+ * prévue, le retard s'affiche et les suivants partent de maintenant.
+ */
 function estimations(s) {
   const res = new Map();
   if (!s.debut || s.passee || s.edition) return res;
   const moy = S.dureesMoyennes(s.programmeId, s.splitId);
-  const fins = s.blocs.filter((b) => b.finA).map((b) => b.finA);
-  let curseur = Math.max(Date.now(), ...fins, new Date(s.debut).getTime());
-  for (const b of s.blocs) {
-    if (!actifs(b).length || blocFini(b)) continue;
+  const repere = Math.max(new Date(s.debut).getTime(), ...s.blocs.filter((b) => b.finA).map((b) => b.finA));
+  const maintenant = Date.now();
+  const restants = s.blocs.filter((b) => actifs(b).length && !blocFini(b) && !b.exos.every((e) => e.mesure === 'echauffement'));
+  const encours = restants.find(blocEntame);
+  const ordre = encours ? [encours, ...restants.filter((b) => b !== encours)] : restants;
+  let curseur = repere + pauseEntre(s, repere, maintenant);
+  ordre.forEach((b, k) => {
     const m = b.src ? moy.get(b.src) : null;
-    if (!m) { res.set(b.id, { inconnu: true }); continue; }
-    curseur += m * 1000;
-    res.set(b.id, { moyenne: m, fin: curseur });
-  }
+    if (m) curseur += m * 1000;
+    const r = m ? { moyenne: m, fin: curseur } : { inconnu: true };
+    if (k === 0 && maintenant > curseur) { if (m) r.retard = maintenant - curseur; curseur = maintenant; }
+    res.set(b.id, r);
+  });
   return res;
 }
 
@@ -1293,6 +1311,7 @@ function ligneTemps(s, b, est) {
   }
   if (b.finA && b.duree != null) return `<small class="bloc-temps fini">${I.check}fini à ${heureCourte(b.finA)} · ${minutes(b.duree)}</small>`;
   const e = est?.get(b.id);
+  if (e?.retard) return `<small class="bloc-temps retard">≈ ${minutes(e.moyenne)} · prévu ${heureCourte(e.fin)} · +${minutes(e.retard / 1000)}</small>`;
   if (e?.moyenne) return `<small class="bloc-temps">≈ ${minutes(e.moyenne)} · fin vers ${heureCourte(e.fin)}</small>`;
   return '';
 }
@@ -1328,7 +1347,7 @@ function ligneTonnage(s, b, prec) {
 
 function resumeBloc(b) {
   let faites = 0, total = 0;
-  for (const e of actifs(b)) for (const x of e.series) { total++; if (x.fait) faites++; }
+  for (const e of actifs(b)) for (const x of e.series) { if (x.saute) continue; total++; if (x.fait) faites++; }
   return `${faites}/${total}`;
 }
 
@@ -1375,6 +1394,8 @@ function carteBloc(s, b, est, prec) {
       ${exos.every((e) => e.mesure === 'echauffement') ? '' : `<div class="bloc-pied">
         <button data-action="retirer-serie" data-bloc="${b.id}">${I.moins} ${exos.every((e) => e.mesure === 'cardio') ? 'segment' : 'série'}</button>
         <button data-action="ajouter-serie" data-bloc="${b.id}">${I.plus} ${exos.every((e) => e.mesure === 'cardio') ? 'segment' : 'série'}</button>
+        ${!fini ? `<button data-action="terminer-exo" data-bloc="${b.id}">${I.check} Terminer</button>`
+          : exos.some((e) => e.series.some((x) => x.saute)) ? `<button data-action="reprendre-exo" data-bloc="${b.id}">${I.passer} Reprendre</button>` : ''}
       </div>`}
     </article>`;
 }
@@ -1391,9 +1412,11 @@ function vueSeance() {
         <button class="btn-icone sur-couleur" data-action="${s.edition ? 'recap' : 'ouvrir-programme'}" data-id="${s.edition ? s.id : s.programmeId}" aria-label="Retour">${I.retour}</button>
         <div class="bandeau-titre"><h1>${esc(s.nom)}</h1>
           <small>${s.edition ? `Modification · séance du ${dateCourte(s.date)}` : s.passee ? `Séance du ${dateCourte(s.date)}${S.heure(s.debut) !== '12:00' ? ` · ${S.heure(s.debut)}` : ''}` : s.debut ? `${dateCourte(s.date)} · <span data-temps-seance>${duree(b.dureeSec)}</span>` : 'Pas commencée'}</small></div>
+        ${s.debut && !s.passee && !s.edition && !enPause(s) ? `<button class="btn-icone sur-couleur" data-action="pause-seance" aria-label="Mettre la séance en pause">${I.pause}</button>` : ''}
         <button class="btn-icone sur-couleur ${r.antiVeille ? 'actif' : ''}" data-action="veille" aria-label="Garder l'écran allumé" aria-pressed="${r.antiVeille}">${I.ecran}</button>
         <button class="btn-icone sur-couleur" data-action="menu-seance" aria-label="Plus d'actions">${I.menu}</button>
       </div>
+      ${enPause(s) ? `<button class="btn-demarrer pause" data-action="reprendre-seance"><span class="l1">${I.play} Reprendre la séance</span><small>en pause depuis ${heureCourte(s.pauses[s.pauses.length - 1].de)}</small></button>` : ''}
       ${s.debut ? `
         <div class="progression"><span style="width:${b.series ? (b.faites / b.series) * 100 : 0}%"></span></div>
         <div class="bandeau-chiffres"><span><b>${b.faites}</b>/${b.series} séries</span><span><b>${kg(Math.round(b.tonnage))}</b> kg${(() => { const pr = S.precedente(s); return pr ? `<small class="ton-avant"> / ${kg(Math.round(bilan(pr).tonnage))} la dernière fois</small>` : ''; })()}</span></div>`
@@ -1517,7 +1540,7 @@ function boucleChrono() {
 function tic() {
   const s = S.seanceEnCours();
   if (!s || !s.debut || s.passee) return;
-  const t = duree((Date.now() - new Date(s.debut)) / 1000);
+  const t = duree(bilan(s).dureeSec);
   document.querySelectorAll('[data-temps-seance]').forEach((el) => { el.textContent = t; });
 }
 
@@ -1546,6 +1569,9 @@ function ouvrirFenetre(html, onSubmit) {
   couche.onclick = (ev) => { if (ev.target === couche) fermer(); };
   const f = couche.querySelector('form');
   if (f && onSubmit) f.onsubmit = (ev) => { ev.preventDefault(); onSubmit(new FormData(f), f); };
+  // Case « Avec assistance » : le lest devient une assistance (signe −) dans tout le formulaire.
+  const ca = f?.querySelector('[name="assiste"]');
+  if (ca) { f.classList.toggle('assiste', ca.checked); ca.addEventListener('change', () => f.classList.toggle('assiste', ca.checked)); }
 }
 
 /** Lien Google Maps de la salle : le bouton Salle de l'accueil l'ouvre directement. */
@@ -1603,11 +1629,11 @@ function stepper(nom, libelle, valeur, pas, unite) {
     </div>`;
 }
 
-function champsMesure(mesure, v) {
+function champsMesure(mesure, v, e) {
   if (mesure === 'temps') return stepper('sec', 'Durée', v.sec, 5, 's');
   if (mesure === 'cardio') return stepper('min', 'Durée', v.min ?? 20, 1, 'min');
   if (mesure === 'echauffement') return '';
-  if (mesure === 'pdc') return `<div class="deux">${stepper('reps', 'Répétitions', v.reps, 1, 'reps')}${stepper('lest', 'Lest', v.lest || 0, 2.5, 'kg')}</div>`;
+  if (mesure === 'pdc') return `<div class="deux">${stepper('reps', 'Répétitions', v.reps, 1, 'reps')}${stepper('lest', e?.assiste ? 'Assistance (aide)' : '<span class="lib-lest"></span>', v.lest || 0, 2.5, 'kg')}</div>`;
   return `<div class="deux">${stepper('kg', 'Charge', v.kg, 2.5, 'kg')}${stepper('reps', 'Répétitions', v.reps, 1, 'reps')}</div>`;
 }
 
@@ -1643,8 +1669,8 @@ function fenetreSerie(s, blocId, exoId, i) {
     <form>
       <h2>${esc(e.nom)} <small>série ${i + 1}</small></h2>
       ${v.prevu ? `<p class="aide">Prévu : ${texteSerie(e, v.prevu)}${e.uni ? ' par côté' : ''}</p>` : ''}
-      ${champsMesure(e.mesure, v)}
-      ${accepteDegressif(e) ? `<div class="degressives">
+      ${champsMesure(e.mesure, v, e)}
+      ${accepteDegressif(e) ? `<div class="degressives ${e.assiste ? 'assiste' : ''}">
         <div data-paliers>${(v.paliers || []).map((p) => lignePalier(e.mesure, p)).join('')}</div>
         <button type="button" class="lien" data-f="ajouter-palier">↘ Ajouter une dégressive</button>
       </div>` : ''}
@@ -1655,12 +1681,14 @@ function fenetreSerie(s, blocId, exoId, i) {
       <p class="aide mini-aide" data-mini-aide>Lance le chrono : à l'arrêt, la durée s'inscrit dans le champ.</p>` : ''}
       <button class="btn btn-principal btn-large">${v.fait ? 'Enregistrer' : 'Valider la série'}</button>
       <div class="actions-sec">
-        ${v.fait ? '<button type="button" class="lien" data-f="defaire">Marquer non faite</button>' : ''}
+        ${v.fait ? '<button type="button" class="lien" data-f="defaire">Marquer non faite</button>' : `<button type="button" class="lien" data-f="passer">${v.saute ? 'Ne plus passer cette série' : 'Passer cette série'}</button>`}
         <button type="button" class="lien danger" data-f="supprimer">Retirer cette série</button>
       </div>
     </form>`, (fd) => {
     if (!v.fait) v.faitA = Date.now();
     Object.assign(v, lireMesure(fd, e.mesure), { fait: true });
+    delete v.saute;
+    reprendreSiPause(s);
     if (accepteDegressif(e)) v.paliers = lirePaliers(couche.querySelector('.degressives [data-paliers]'), e.mesure);
     s.dernierBloc = blocId;
     const fin = () => { majFinBloc(s, s.blocs.find((x) => x.id === blocId)); S.enregistrer(); vueSeance(); };
@@ -1708,6 +1736,13 @@ function fenetreSerie(s, blocId, exoId, i) {
     S.enregistrer(); fermer(); vueSeance();
     toast('Série retirée');
   };
+  const ps = couche.querySelector('[data-f="passer"]');
+  if (ps) ps.onclick = () => {
+    if (v.saute) delete v.saute; else v.saute = true;
+    majFinBloc(s, s.blocs.find((x) => x.id === blocId));
+    S.enregistrer(); fermer(); vueSeance();
+    if (v.saute) toast('Série passée : ni faite, ni due');
+  };
   const d = couche.querySelector('[data-f="defaire"]');
   if (d) d.onclick = () => { v.fait = false; delete v.faitA; majFinBloc(s, s.blocs.find((x) => x.id === blocId)); S.enregistrer(); fermer(); vueSeance(); };
 }
@@ -1737,7 +1772,7 @@ function fenetreExo(s, blocId, exoId) {
     const mesure = fd.get('mesure');
     if (mesure !== e.mesure) e.series.forEach((x) => { if (mesure === 'cardio' && x.min == null) x.min = 20; if (mesure === 'temps' && x.sec == null) x.sec = 30; if (mesure !== 'temps' && x.reps == null) x.reps = 10; if (mesure === 'charge' && x.kg == null) x.kg = 0; });
     const pctTxt = String(fd.get('pct') || '').trim();
-    Object.assign(e, { nom: majuscule(fd.get('nom')) || e.nom, mesure, uni: fd.get('uni') === 'on', note: fd.get('note').trim(), pct: mesure === 'pdc' && pctTxt ? num(pctTxt) : null });
+    Object.assign(e, { nom: majuscule(fd.get('nom')) || e.nom, mesure, uni: fd.get('uni') === 'on', note: fd.get('note').trim(), pct: mesure === 'pdc' && pctTxt ? num(pctTxt) : null, assiste: mesure === 'pdc' && fd.get('assiste') === 'on' });
     // La note est transversale : elle repart dans le modèle et suit les prochaines séances.
     const modele = e.src && S.exoModele(s.programmeId, s.splitId, e.src);
     if (modele) modele.note = e.note;
@@ -1765,6 +1800,7 @@ function fenetreAjout(s) {
       <label class="champ"><span>Exercice</span><input name="nom" required placeholder="Fentes marchées" autocomplete="off" autocapitalize="sentences"></label>
       ${choixMesure('charge')}
       <div data-mesure-champs>${champsMesure('charge', { kg: 20, reps: 10 })}</div>
+      <div data-pct hidden>${champPct({ nom: '' })}</div>
       <div class="deux">${stepper('nb', 'Séries faites', 3, 1, '')}
         <label class="interrupteur bas"><input type="checkbox" name="uni"><span></span>Unilatéral</label></div>
       <input type="hidden" name="mode" value="">
@@ -1778,7 +1814,9 @@ function fenetreAjout(s) {
     const val = lireMesure(fd, mesure);
     const nb = mesure === 'echauffement' ? 1 : Math.max(1, Math.round(num(fd.get('nb'))));
     const exo = {
-      id: uid('e'), src: null, nom: majuscule(fd.get('nom')), mesure, uni: fd.get('uni') === 'on', note: '', pct: mesure === 'pdc' ? pctSuggere(fd.get('nom')) : null,
+      id: uid('e'), src: null, nom: majuscule(fd.get('nom')), mesure, uni: fd.get('uni') === 'on', note: '',
+      pct: mesure === 'pdc' && String(fd.get('pct') || '').trim() ? Math.min(200, Math.max(1, num(fd.get('pct')))) : null,
+      assiste: mesure === 'pdc' && fd.get('assiste') === 'on',
       series: Array.from({ length: nb }, () => ({ prevu: null, ...val, fait: true, faitA: Date.now() })),
     };
     const bloc = { id: uid('b'), src: null, repos: 60, exos: [exo] };
@@ -1799,6 +1837,8 @@ function fenetreAjout(s) {
   f.querySelectorAll('[data-mode]').forEach((btn) => btn.addEventListener('click', () => { f.elements.mode.value = btn.dataset.mode; }));
   f.elements.mesure.addEventListener('change', () => {
     f.querySelector('[data-mesure-champs]').innerHTML = champsMesure(f.elements.mesure.value, { kg: 20, reps: 10, sec: 30, min: 20 });
+    f.querySelector('[data-pct]').hidden = f.elements.mesure.value !== 'pdc';
+    if (f.elements.mesure.value === 'pdc' && !f.elements.pct.value) f.elements.pct.value = pctSuggere(f.elements.nom.value) ?? '';
   });
   setTimeout(() => f.elements.nom.focus(), 60);
 }
@@ -1886,6 +1926,11 @@ function fenetreDemarrage(s, suite) {
     fermer(); suite(); toast('Saisie sans minutage');
   });
   couche.querySelector('[data-f="demarrer"]').onclick = () => { S.lancer(s); fermer(); suite(); };
+}
+
+function reprendreSiPause(s) {
+  const p = s.pauses?.[s.pauses.length - 1];
+  if (p && p.a == null) p.a = Date.now();
 }
 
 function fenetreMenuSeance(s) {
@@ -2085,6 +2130,31 @@ app.addEventListener('click', (ev) => {
       S.ouvrir(S.programmeEnCours().id, d.split);
       return aller('#/seance');
     case 'lancer': S.lancer(s); return vueSeance();
+    case 'pause-seance': (s.pauses ||= []).push({ de: Date.now(), a: null }); S.enregistrer(); toast('Séance en pause : le temps ne compte plus'); return vueSeance();
+    case 'reprendre-seance': reprendreSiPause(s); S.enregistrer(); return vueSeance();
+    case 'reprendre-serie': {
+      const { e } = trouver(s, d.bloc, d.exo);
+      delete e.series[+d.i].saute;
+      majFinBloc(s, s.blocs.find((x) => x.id === d.bloc)); S.enregistrer();
+      return vueSeance();
+    }
+    case 'terminer-exo': {
+      const bl = s.blocs.find((x) => x.id === d.bloc);
+      const fin = () => {
+        reprendreSiPause(s);
+        actifs(bl).forEach((e) => e.series.forEach((x) => { if (!x.fait) x.saute = true; }));
+        s.dernierBloc = bl.id; bl.replie = true;
+        majFinBloc(s, bl); S.enregistrer(); vueSeance();
+      };
+      if (!s.debut) return fenetreDemarrage(s, fin);
+      return fin();
+    }
+    case 'reprendre-exo': {
+      const bl = s.blocs.find((x) => x.id === d.bloc);
+      actifs(bl).forEach((e) => e.series.forEach((x) => { delete x.saute; }));
+      majFinBloc(s, bl); S.enregistrer();
+      return vueSeance();
+    }
     case 'veille': {
       const r = S.get().reglages;
       r.antiVeille = !r.antiVeille;
@@ -2106,7 +2176,7 @@ app.addEventListener('click', (ev) => {
       if (!v.fait && serieIncomplete(e, v)) return fenetreSerie(s, d.bloc, d.exo, +d.i);
       if (!v.fait && !s.debut) return fenetreDemarrage(s, () => { v.fait = true; v.faitA = Date.now(); s.dernierBloc = d.bloc; majFinBloc(s, s.blocs.find((x) => x.id === d.bloc)); S.enregistrer(); vueSeance(); });
       v.fait = !v.fait;
-      if (v.fait) { v.faitA = Date.now(); s.dernierBloc = d.bloc; if (!s.debut) S.lancer(s); } else delete v.faitA;
+      if (v.fait) { v.faitA = Date.now(); s.dernierBloc = d.bloc; if (!s.debut) S.lancer(s); reprendreSiPause(s); } else delete v.faitA;
       majFinBloc(s, s.blocs.find((x) => x.id === d.bloc));
       S.enregistrer();
       return vueSeance();

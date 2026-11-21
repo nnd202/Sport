@@ -1,7 +1,7 @@
 // Vérifications avant publication : node tools/check.mjs
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { nouvelleSeance, bilan, volumeSerie, definirPoids, dateCourte, dateNum } from '../js/calc.js';
+import { nouvelleSeance, bilan, volumeSerie, definirPoids, dateCourte, dateNum, pauseEntre } from '../js/calc.js';
 import { programmeDemo } from '../js/demo.js';
 import { couloirs, ressentiPerformance } from '../js/stats.js';
 import { graduations } from '../js/graph.js';
@@ -86,6 +86,25 @@ dateCourte(`${an}-06-12`).split('/').length === 2 && dateCourte(`${an - 1}-06-12
     S.horsTiming({ passee: true }) === true && S.horsTiming({}) === false && S.horsTiming({ passee: true, horsTiming: false }) === false
       ? ok('hors timing : saisie après coup exclue par défaut, réglable') : ko('hors timing');
   } else ok('hors timing : store non chargeable hors navigateur (vérifié en navigateur)');
+}
+
+// Dips assistés : 80 kg × 92 % − assistance ; dégressive = plus d'assistance.
+{
+  definirPoids(() => 80);
+  const dips = { mesure: 'pdc', pct: 92, assiste: true };
+  const v = volumeSerie(dips, { fait: true, reps: 10, lest: 0, paliers: [{ reps: 6, lest: 20 }, { reps: 5, lest: 35 }] }, '2026-11-20');
+  const att = 73.6 * 10 + 53.6 * 6 + 38.6 * 5;
+  Math.abs(v - att) < 1e-6 ? ok('dips assistés : 73,6×10 + 53,6×6 + 38,6×5 = 1 250,6 kg') : ko(`dips assistés ${v} ≠ ${att}`);
+}
+
+// Série passée : ni faite ni due ; pauses déduites de la durée.
+{
+  const se = { date: '2026-11-20', debut: '2026-11-20T14:00:00Z', fin: '2026-11-20T15:00:00Z',
+    pauses: [{ de: Date.parse('2026-11-20T14:20:00Z'), a: Date.parse('2026-11-20T14:45:00Z') }],
+    blocs: [{ exos: [{ mesure: 'charge', series: [{ fait: true, kg: 50, reps: 10 }, { saute: true, kg: 50, reps: 10 }, { fait: false, kg: 50, reps: 10 }] }] }] };
+  const bi = bilan(se);
+  bi.series === 2 && bi.faites === 1 && bi.tonnage === 500 && bi.dureeSec === 35 * 60
+    ? ok('série passée exclue, pause de 25 min déduite (60 → 35 min)') : ko(`passée/pause ${JSON.stringify(bi)}`);
 }
 
 process.exit(erreurs ? 1 : 0);
